@@ -16,8 +16,15 @@ DATA_DIR = (
 PROFILE_DIR = DATA_DIR / "profiles"
 RESUME_DIR = DATA_DIR / "resumes"
 BROWSER_DIR = DATA_DIR / "browsers"
+APPLICATION_DIR = DATA_DIR / "applications"
 
-for directory in (DATA_DIR, PROFILE_DIR, RESUME_DIR, BROWSER_DIR):
+for directory in (
+    DATA_DIR,
+    PROFILE_DIR,
+    RESUME_DIR,
+    BROWSER_DIR,
+    APPLICATION_DIR,
+):
     directory.mkdir(parents=True, exist_ok=True)
 
 API_TOKEN = os.getenv("LOCAL_API_TOKEN", "").strip()
@@ -27,3 +34,4 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 ENABLE_STEALTH = os.getenv("ENABLE_STEALTH", "false").lower() == "true"
 HUMAN_TIMEOUT_SECONDS = int(os.getenv("HUMAN_TIMEOUT_SECONDS", "1800"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "20")) * 1024 * 1024
+MAX_RUN_HISTORY = int(os.getenv("MAX_RUN_HISTORY", "100"))

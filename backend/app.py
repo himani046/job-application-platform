@@ -8,6 +8,9 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
+from backend.job_store import get_job, list_jobs, upsert_jobs
+from backend.jobs import job_fingerprint, normalize_job
+from backend.matcher import rank_jobs
 from backend.application_store import (
     create_application,
     get_application,
@@ -17,7 +20,13 @@ from backend.application_store import (
 )
 from backend.config import API_TOKEN, MAX_RUN_HISTORY, MAX_UPLOAD_BYTES
 from backend.engine import Engine, Run, start_url, validate_public_url
-from backend.models import ApplicationRecord, Profile, RunCommand, RunRequest
+from backend.models import (
+    ApplicationRecord,
+    JobMatchRequest,
+    Profile,
+    RunCommand,
+    RunRequest,
+)
 from backend.parser import parse_resume
 from backend.portals import list_adapters
 from backend.storage import (
@@ -93,6 +102,21 @@ class RunManager:
     ) -> None:
         try:
             await Engine(run, profile, resume_path).execute()
+
+            if run.request.mode == "discover" and run.results:
+                jobs = [
+                    normalize_job(item, run.request.portal)
+                    for item in run.results
+                    if item.get("url")
+                ]
+                upsert_jobs(jobs)
+                run.results = [
+                    job.model_dump(mode="json")
+                    for job in jobs
+                ]
+                run.log(
+                    f"Persisted {len(jobs)} normalized jobs for future matching."
+                )
         except asyncio.CancelledError:
             run.status = "stopped"
             run.log("Run stopped by the user.", "warning")
@@ -274,6 +298,31 @@ async def applications():
     return [item.model_dump(mode="json") for item in list_applications()]
 
 
+@app.get("/jobs", dependencies=auth)
+async def jobs():
+    return [item.model_dump(mode="json") for item in list_jobs()]
+
+
+@app.get("/jobs/{job_id}", dependencies=auth)
+async def read_job(job_id: str):
+    try:
+        return get_job(job_id).model_dump(mode="json")
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/jobs/match", dependencies=auth)
+async def match_jobs(request: JobMatchRequest):
+    try:
+        profile = get_profile(request.profile_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+    return rank_jobs(profile, list_jobs(), request.limit)
+
+
 @app.get("/applications/{application_id}", dependencies=auth)
 async def read_application(application_id: str):
     try:
@@ -317,7 +366,7 @@ async def create_run(request: RunRequest):
         record = ApplicationRecord(
             id=application_id,
             profile_id=request.profile_id,
-            job_id=uuid.uuid5(uuid.NAMESPACE_URL, request.job_url or "").hex,
+            job_id=job_fingerprint(request.job_url or "", ""),
             job_url=request.job_url or "",
             portal=request.portal,
             status="queued",

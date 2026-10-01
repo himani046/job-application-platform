@@ -1,5 +1,6 @@
 import hashlib
 import re
+from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from backend.models import JobRecord
@@ -35,4 +36,12 @@ def normalize_job(item: dict, portal: str) -> JobRecord:
         portal=portal,
         title=item.get("title", "").strip(),
         url=url,
+        company=item.get("company", "").strip(),
+        location=item.get("location", "").strip(),
+        description=item.get("description", "").strip(),
+        discovered_at=item.get(
+            "discovered_at",
+            datetime.now(timezone.utc).isoformat(),
+        ),
+        metadata=item.get("metadata", {}),
     )

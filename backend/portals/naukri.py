@@ -2,7 +2,7 @@ import re
 from urllib.parse import urlparse
 
 from backend.models import RunRequest
-from backend.portals.base import PortalCapabilities
+from backend.portals.base import PortalCapabilities, PortalFormRules
 
 
 class NaukriAdapter:
@@ -34,3 +34,6 @@ class NaukriAdapter:
         if not slug:
             raise ValueError("Enter search keywords for Naukri discovery.")
         return f"https://www.naukri.com/{slug}-jobs"
+
+    def form_rules(self) -> PortalFormRules:
+        return self.capabilities.form_rules

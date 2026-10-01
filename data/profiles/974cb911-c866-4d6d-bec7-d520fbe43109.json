@@ -1,0 +1,152 @@
+{
+  "id": "974cb911-c866-4d6d-bec7-d520fbe43109",
+  "original_name": "DHIRAJ RATHORE CV Marketing.pdf",
+  "resume_extension": ".pdf",
+  "created_at": "2026-10-01T22:56:40.839259+00:00",
+  "profile": {
+    "personal": {
+      "full_name": "Dhiraj Rathore",
+      "first_name": "Dhiraj",
+      "last_name": "Rathore",
+      "email": "drathore477@gmail.com",
+      "phone": "9713123145",
+      "location": "3064 Sector 23, Gurugram, Haryana 122017, India",
+      "city": "Gurugram",
+      "state": "Haryana",
+      "country": "India",
+      "postal_code": "122017"
+    },
+    "online_profiles": {
+      "linkedin": "https://www.linkedin.com/in/dhiraj-rathore-80b26317b/",
+      "github": "",
+      "portfolio": ""
+    },
+    "work_history": [
+      {
+        "company": "Hogarth Studios",
+        "title": "Senior Lead Analyst – Data Analyst",
+        "location": "Gurugram",
+        "start_date": "Sep-2025",
+        "end_date": null,
+        "current": true,
+        "achievements": [
+          "Orchestrated real-time customer journeys in Adobe Journey Optimizer (AJO) using Push Notifications, SMS, and Email, activating AEP unified profiles to improve retention by 18%.",
+          "Built AEP data pipelines (50+ GB) using PySpark and SQL, ingesting data from SFMC, Adobe Campaign v8, and AEP to enable real-time segmentation and personalization.",
+          "Designed and activated real-time and lookalike audiences in AEP, driving personalized Push and SMS campaigns.",
+          "Created Power BI and Tableau dashboards to track journey performance, engagement, and audience growth, enabling continuous optimization.",
+          "Enforced data governance, consent, and privacy controls in AEP, achieving 100% GDPR and audit compliance.",
+          "Optimized channel mix and personalization, increasing CTR by 25% and conversion rate by 20% across AJO campaigns.",
+          "Applied Python-based propensity and churn models, feeding insights into AEP audiences to improve retention forecasting accuracy by 30%.",
+          "Managed AEP and AJO user roles, sandboxes, and permissions, ensuring secure activation and 100% authentication compliance."
+        ]
+      },
+      {
+        "company": "QPK-E-Services",
+        "title": "Senior Team Lead (Marketing Automation Specialist)",
+        "location": "Gurugram",
+        "start_date": "Sep-2023",
+        "end_date": "Aug-2025",
+        "current": false,
+        "achievements": [
+          "Designed SQL-driven audience segmentation in Automation Studio & Contact Builder, improving lead quality by 18% and conversion rates by 12%.",
+          "Built and maintained ETL automations integrating Salesforce Marketing Cloud, Marketo, and CRM data using Data Extensions and SQL activities, improving data accuracy by 95%.",
+          "Developed 20+ Tableau dashboards tracking email performance, journey metrics, channel engagement, and campaign ROI, supporting SFMC campaign optimization.",
+          "Delivered behavior-driven insights to optimize Journey Builder flows, send timing, and personalization, driving 20% higher conversions.",
+          "Enforced GDPR and CAN-SPAM compliance through SFMC consent management, suppression logic, and data governance, ensuring 100% regulatory adherence.",
+          "Partnered with sales and product teams to activate insights via SFMC journeys and triggered campaigns, contributing to ₹1M+ in revenue uplift."
+        ]
+      },
+      {
+        "company": "Zappian Media",
+        "title": "Assistant Manager – Email Marketing Operations",
+        "location": "Bhopal",
+        "start_date": "Jan-2021",
+        "end_date": "Aug-2023",
+        "current": false,
+        "achievements": [
+          "Managed and optimized campaign data pipelines using Python, SQL-pipelines, and GA4.",
+          "Conducted data cleansing, validation, and governance checks to ensure 100% accuracy across marketing systems.",
+          "Integrated API to automate workflows, resulting in a 10% increase in lead nurturing efficiency.",
+          "Led multivariate A/B testing and statistical analysis to drive 12% uplift in engagement.",
+          "Presented 15+ Power BI reports highlighting segmentation performance and increase revenue by 50%."
+        ]
+      },
+      {
+        "company": "Rightful Labs",
+        "title": "Digital Campaigns Manager",
+        "location": "Bhopal",
+        "start_date": "Jun-2019",
+        "end_date": "Dec-2020",
+        "current": false,
+        "achievements": [
+          "Analyzed CRM and user data for 10M+ contacts to uncover behavioral patterns, designed and automated 10+ SQL-driven KPI dashboards in Tableau and Google Sheets, and supported A/B testing and forecasting initiatives that improved ROI by 15% and optimized targeting accuracy by 20%.",
+          "Executed 1000+ multi-channel campaigns across Salesforce Marketing Cloud, ACCv8, Ongage, and HubSpot with 100% accuracy, achieving 28% average open rate, 4.5% CTR, and 22% lift in MQL-to-SQL conversions through advanced segmentation, journey design, and compliant operations (GDPR, CAN-SPAM)."
+        ]
+      }
+    ],
+    "education": [
+      {
+        "institution": "Shree balaji institute of technology and management",
+        "degree": "Bachelor of Engineering (B.E.) (B.Tech)",
+        "field_of_study": "Electronics & Communication Engineering",
+        "start_date": "Aug-2015",
+        "end_date": "June-2019"
+      }
+    ],
+    "skills": [
+      "Python",
+      "SQL",
+      "MySQL",
+      "HTML/CSS",
+      "R",
+      "PySpark",
+      "Numpy",
+      "Pandas",
+      "AMPScript",
+      "Javascript",
+      "REST API",
+      "Power BI",
+      "Tableau",
+      "GA4",
+      "Advanced Excel",
+      "Reporting Automation",
+      "KPI Dashboards",
+      "SSMS",
+      "API Integration",
+      "Data Modeling",
+      "ETL Pipeline Design",
+      "Data Cleaning",
+      "Customer Segmentation",
+      "Adobe Journey Optimizer",
+      "CRM Automation",
+      "APEX",
+      "Microsoft Azure",
+      "Azure Data Factory",
+      "AWS S3 (Basics)",
+      "Jira",
+      "Google Tag Manager",
+      "Postman",
+      "Salesforce Marketing Cloud",
+      "Adobe Campaign Classic",
+      "Marketo",
+      "Leadership",
+      "Strategic Thinking",
+      "Cross-functional Collaboration",
+      "Stakeholder Communication"
+    ],
+    "years_of_experience": 6.0,
+    "ats_defaults": {
+      "notice_period": null,
+      "expected_salary_amount": null,
+      "salary_currency": "",
+      "salary_period": "annual",
+      "work_authorized": null,
+      "requires_sponsorship": null,
+      "gender": "Prefer not to say",
+      "ethnicity": "Prefer not to say",
+      "disability": "Prefer not to say",
+      "veteran_status": "Prefer not to say"
+    },
+    "custom_answers": {}
+  }
+}

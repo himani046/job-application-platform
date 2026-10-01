@@ -1,0 +1,7 @@
+2026/10/01-16:14:26.914 9768 Reusing MANIFEST C:\Users\DhirajRathore\Downloads\tradeAI\job-application-platform\data\browsers\linkedin\Default\Local Storage\leveldb/MANIFEST-000001
+2026/10/01-16:14:26.925 9768 Recovering log #3
+2026/10/01-16:14:26.925 9768 Level-0 table #3: started
+2026/10/01-16:14:26.932 9768 Level-0 table #3: 25028 bytes OK
+2026/10/01-16:14:26.948 9768 Recovering log #4
+2026/10/01-16:14:26.952 9768 Reusing old log C:\Users\DhirajRathore\Downloads\tradeAI\job-application-platform\data\browsers\linkedin\Default\Local Storage\leveldb/000004.log 
+2026/10/01-16:14:26.953 9768 Delete type=0 #3

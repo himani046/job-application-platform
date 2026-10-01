@@ -27,6 +27,7 @@ from backend.config import (
 from backend.models import Profile, RunCommand, RunRequest
 from backend.parser import suggest_answer
 from backend.storage import normalize_question, remember_answer
+from backend.portals import get_adapter
 
 FORM_SCRIPT = r"""
 () => {
@@ -515,6 +516,8 @@ class Engine:
         self.run = run
         self.profile = profile
         self.resume_path = resume_path
+        self.adapter = get_adapter(run.request.portal, run.request)
+        self.form_rules = self.adapter.form_rules()
 
         self.context: BrowserContext | None = None
         self.page: Page | None = None
@@ -930,6 +933,7 @@ class Engine:
             try:
                 for item in await frame.evaluate(FORM_SCRIPT):
                     item["frame"] = frame
+                    item["portal_hints"] = self.portal_field_hints(item)
                     collected.append(item)
             except Exception:
                 continue
@@ -942,6 +946,16 @@ class Engine:
         return frame.locator(
             f'[data-job-agent-id="{item["key"]}"]'
         )
+
+    def portal_field_hints(self, item: dict) -> list[str]:
+        haystack = " ".join(str(item.get(key, "")) for key in ("label", "meta", "accept"))
+        return [semantic for semantic, patterns in self.form_rules.field_patterns.items() if any(re.search(pattern, haystack, re.I) for pattern in patterns)]
+
+    def button_pattern(self, kind: str, fallback: str) -> str:
+        patterns = self.form_rules.next_button_patterns if kind == "next" else self.form_rules.submit_button_patterns
+        if not patterns:
+            return fallback
+        return "(?:" + "|".join(f"(?:{pattern})" for pattern in patterns) + f"|(?:{fallback}))"
 
     async def find_button(self, pattern: str) -> dict | None:
         regex = re.compile(pattern, re.I)
@@ -1755,10 +1769,7 @@ class Engine:
                 self.navigation_attempts.clear()
                 continue
 
-            next_button = await self.find_button(
-                r"next|continue|review|save and continue|"
-                r"continue application|review application|next step"
-            )
+            next_button = await self.find_button(self.button_pattern("next", r"next|continue|review|save and continue|continue application|review application|next step"))
 
             if next_button:
                 signature = (
@@ -1802,11 +1813,7 @@ class Engine:
                 await self.locator(next_button).click()
                 continue
 
-            submit_button = await self.find_button(
-                r"submit|submit application|send application|"
-                r"complete application|finish|finish application|"
-                r"submit my application|apply|apply now"
-            )
+            submit_button = await self.find_button(self.button_pattern("submit", r"submit|submit application|send application|complete application|finish|finish application|submit my application|apply|apply now"))
 
             if submit_button and fields:
                 command = await self.run.pause(

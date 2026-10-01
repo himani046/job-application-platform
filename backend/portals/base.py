@@ -1,8 +1,20 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 from urllib.parse import urlparse
 
 from backend.models import Portal, RunRequest
+
+
+@dataclass(frozen=True)
+class PortalFormRules:
+    """Stable, semantic form hints used by the generic Playwright engine."""
+
+    field_selectors: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    field_patterns: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    resume_selectors: tuple[str, ...] = ()
+    next_button_patterns: tuple[str, ...] = ()
+    submit_button_patterns: tuple[str, ...] = ()
+    confirmation_patterns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -13,6 +25,7 @@ class PortalCapabilities:
     supports_discovery: bool = True
     supports_application: bool = True
     notes: str = ""
+    form_rules: PortalFormRules = field(default_factory=PortalFormRules)
 
 
 class PortalAdapter(Protocol):
@@ -22,6 +35,9 @@ class PortalAdapter(Protocol):
         ...
 
     def build_discovery_url(self, request: RunRequest) -> str | None:
+        ...
+
+    def form_rules(self) -> PortalFormRules:
         ...
 
 
@@ -48,3 +64,6 @@ class GenericPortalAdapter:
 
     def build_discovery_url(self, request: RunRequest) -> str | None:
         return request.job_url or None
+
+    def form_rules(self) -> PortalFormRules:
+        return self.capabilities.form_rules

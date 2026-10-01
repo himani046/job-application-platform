@@ -74,89 +74,14 @@ def is_linkedin_auth_page(value: str) -> bool:
     )
 
 def start_url(request: RunRequest) -> str:
-    """
-    Build the initial URL.
+    """Resolve the target URL through the selected portal adapter."""
+    if request.mode == "discover":
+        adapter = get_adapter(request.portal, request)
+        target = adapter.build_discovery_url(request)
+        if target:
+            return target
 
-    Search location is separate from Profile.personal.location.
-    Application and login URLs are left unchanged.
-    """
-    if request.mode != "discover":
-        return base_start_url(request)
-
-    location = request.search_location.strip()
-
-    if not location:
-        raise ValueError(
-            "Enter a job search location, such as India or Bengaluru, India."
-        )
-
-    if request.portal != "linkedin":
-        # Other ATS location controls differ by employer. The engine
-        # pauses for explicit filter confirmation before collecting links.
-        return base_start_url(request)
-
-    supplied_url = (request.job_url or "").strip()
-
-    if supplied_url:
-        parsed = urlparse(supplied_url)
-
-        if not is_linkedin_url(supplied_url):
-            raise ValueError(
-                "LinkedIn discovery requires a LinkedIn job-search URL."
-            )
-
-        if parsed.path.rstrip("/") != "/jobs/search":
-            raise ValueError(
-                "Use a LinkedIn /jobs/search/ URL for discovery, "
-                "or leave the URL field empty."
-            )
-    else:
-        parsed = urlparse(
-            "https://www.linkedin.com/jobs/search/"
-        )
-
-    parameters = dict(
-        parse_qsl(parsed.query, keep_blank_values=True)
-    )
-
-    # Remove conflicting location/workplace identifiers and old pagination.
-    for key in (
-        "location",
-        "geoId",
-        "f_PP",
-        "f_G",
-        "f_WT",
-        "distance",
-        "start",
-        "pageNum",
-        "position",
-        "trk",
-        "trkInfo",
-    ):
-        parameters.pop(key, None)
-
-    keywords = request.keywords.strip()
-
-    if keywords:
-        parameters["keywords"] = keywords
-
-    parameters["location"] = location
-
-    if request.workplace_type != "any":
-        parameters["f_WT"] = LINKEDIN_WORKPLACE_CODES[
-            request.workplace_type
-        ]
-
-    return urlunparse(
-        (
-            "https",
-            parsed.netloc,
-            "/jobs/search/",
-            "",
-            urlencode(parameters),
-            "",
-        )
-    )
+    return base_start_url(request)
 
 def enter_url_using_desktop_keyboard(url: str) -> None:
     try:

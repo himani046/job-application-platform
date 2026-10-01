@@ -17,6 +17,7 @@ PROFILE_DIR = DATA_DIR / "profiles"
 RESUME_DIR = DATA_DIR / "resumes"
 BROWSER_DIR = DATA_DIR / "browsers"
 APPLICATION_DIR = DATA_DIR / "applications"
+JOB_DIR = DATA_DIR / "jobs"
 
 for directory in (
     DATA_DIR,
@@ -24,6 +25,7 @@ for directory in (
     RESUME_DIR,
     BROWSER_DIR,
     APPLICATION_DIR,
+    JOB_DIR,
 ):
     directory.mkdir(parents=True, exist_ok=True)
 

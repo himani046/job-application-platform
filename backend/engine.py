@@ -21,6 +21,7 @@ from backend.engine_base import (
     validate_public_url,
 )
 from backend.models import RunRequest
+from backend.portals import get_adapter
 
 __all__ = [
     "Engine",
@@ -190,7 +191,17 @@ class Engine(BaseEngine):
 
     async def execute(self) -> None:
         request = self.run.request
+        adapter = get_adapter(request.portal, request)
         target = await validate_public_url(start_url(request))
+
+        if not adapter.accepts_url(target):
+            raise ValueError(
+                f"The target URL is not supported by the {request.portal} adapter."
+            )
+
+        self.run.log(
+            f"Using portal adapter: {adapter.capabilities.display_name}"
+        )
 
         browser_directory = BROWSER_DIR / request.portal
         browser_directory.mkdir(parents=True, exist_ok=True)

@@ -740,17 +740,90 @@ with automation_tab:
     live_console()
 
     st.divider()
-    st.subheader("Application history")
-    try:
-        application_records = api("GET", "/applications")
-        if application_records:
-            st.dataframe(
-                application_records,
-                use_container_width=True,
-                hide_index=True,
-                column_config={"job_url": st.column_config.LinkColumn("Job URL")},
-            )
+    history_tab, jobs_tab, matches_tab = st.tabs(
+        ["Application history", "Saved jobs", "Profile matches"]
+    )
+
+    with history_tab:
+        try:
+            application_records = api("GET", "/applications")
+            if application_records:
+                st.dataframe(
+                    application_records,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "job_url": st.column_config.LinkColumn("Job URL")
+                    },
+                )
+            else:
+                st.info("No application records yet.")
+        except RuntimeError as exc:
+            st.warning(f"Application history unavailable: {exc}")
+
+    with jobs_tab:
+        try:
+            saved_jobs = api("GET", "/jobs")
+            if saved_jobs:
+                st.dataframe(
+                    saved_jobs,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "url": st.column_config.LinkColumn("Job URL")
+                    },
+                )
+            else:
+                st.info(
+                    "No saved jobs yet. Run a discovery session to populate "
+                    "the reusable job library."
+                )
+        except RuntimeError as exc:
+            st.warning(f"Saved job library unavailable: {exc}")
+
+    with matches_tab:
+        selected_profile = st.session_state.get("selected_profile_id")
+        if not selected_profile:
+            st.info("Select a saved profile to calculate job matches.")
         else:
-            st.info("No application records yet.")
-    except RuntimeError as exc:
-        st.warning(f"Application history unavailable: {exc}")
+            if st.button("Refresh profile matches", key="refresh-matches"):
+                try:
+                    matches = api(
+                        "POST",
+                        "/jobs/match",
+                        json={
+                            "profile_id": selected_profile,
+                            "limit": 50,
+                        },
+                    )
+                    if matches:
+                        rows = []
+                        for item in matches:
+                            job = item["job"]
+                            match = item["match"]
+                            rows.append(
+                                {
+                                    "score": f"{match['score']:.0%}",
+                                    "title": job["title"],
+                                    "company": job["company"],
+                                    "location": job["location"],
+                                    "matched_keywords": ", ".join(
+                                        match["matched_skills"][:10]
+                                    ),
+                                    "job_url": job["url"],
+                                }
+                            )
+                        st.dataframe(
+                            rows,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "job_url": st.column_config.LinkColumn(
+                                    "Job URL"
+                                )
+                            },
+                        )
+                    else:
+                        st.info("No saved jobs available for matching.")
+                except RuntimeError as exc:
+                    st.warning(f"Matching unavailable: {exc}")

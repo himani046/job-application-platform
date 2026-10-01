@@ -1,6 +1,8 @@
 from backend.models import Portal, RunRequest
 from backend.portals.ats import ATSAdapter
 from backend.portals.base import GenericPortalAdapter, PortalAdapter, PortalCapabilities
+from backend.portals.greenhouse import GreenhouseAdapter
+from backend.portals.lever import LeverAdapter
 from backend.portals.linkedin import LinkedInAdapter
 from backend.portals.naukri import NaukriAdapter
 
@@ -8,8 +10,8 @@ from backend.portals.naukri import NaukriAdapter
 _CAPABILITIES: dict[Portal, PortalCapabilities] = {
     "linkedin": LinkedInAdapter.capabilities,
     "naukri": NaukriAdapter.capabilities,
-    "greenhouse": ATSAdapter("greenhouse").capabilities,
-    "lever": ATSAdapter("lever").capabilities,
+    "greenhouse": GreenhouseAdapter().capabilities,
+    "lever": LeverAdapter().capabilities,
     "workday": ATSAdapter("workday").capabilities,
     "custom": PortalCapabilities(
         portal="custom",
@@ -26,7 +28,11 @@ def get_adapter(portal: Portal, request: RunRequest | None = None) -> PortalAdap
         return LinkedInAdapter()
     if portal == "naukri":
         return NaukriAdapter()
-    if portal in {"greenhouse", "lever", "workday"}:
+    if portal == "greenhouse":
+        return GreenhouseAdapter()
+    if portal == "lever":
+        return LeverAdapter()
+    if portal == "workday":
         return ATSAdapter(portal)
 
     return GenericPortalAdapter("custom")

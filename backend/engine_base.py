@@ -445,6 +445,7 @@ class Run:
     queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     task: asyncio.Task | None = None
     sequence: int = 0
+    application_id: str | None = None
 
     def log(self, message: str, level: str = "info") -> None:
         self.sequence += 1
@@ -467,6 +468,7 @@ class Run:
             "logs": list(self.logs),
             "pending": self.pending,
             "results": self.results,
+            "application_id": self.application_id,
         }
 
     async def pause(

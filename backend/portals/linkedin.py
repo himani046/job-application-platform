@@ -1,7 +1,7 @@
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from backend.models import RunRequest
-from backend.portals.base import PortalCapabilities
+from backend.portals.base import PortalCapabilities, PortalFormRules
 
 
 class LinkedInAdapter:
@@ -58,3 +58,7 @@ class LinkedInAdapter:
             urlencode(parameters),
             "",
         ))
+
+    def form_rules(self) -> PortalFormRules:
+        return self.capabilities.form_rules
+

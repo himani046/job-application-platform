@@ -738,3 +738,19 @@ with automation_tab:
 
     st.divider()
     live_console()
+
+    st.divider()
+    st.subheader("Application history")
+    try:
+        application_records = api("GET", "/applications")
+        if application_records:
+            st.dataframe(
+                application_records,
+                use_container_width=True,
+                hide_index=True,
+                column_config={"job_url": st.column_config.LinkColumn("Job URL")},
+            )
+        else:
+            st.info("No application records yet.")
+    except RuntimeError as exc:
+        st.warning(f"Application history unavailable: {exc}")

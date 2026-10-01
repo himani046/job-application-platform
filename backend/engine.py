@@ -1,12 +1,6 @@
 import asyncio
 import sys
-from urllib.parse import (
-    parse_qsl,
-    quote,
-    urlencode,
-    urlparse,
-    urlunparse,
-)
+from urllib.parse import quote, urlparse
 
 from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
@@ -40,12 +34,6 @@ AUTH_PATHS = (
     "/sign-in",
     "/checkpoint",
 )
-
-LINKEDIN_WORKPLACE_CODES = {
-    "onsite": "1",
-    "remote": "2",
-    "hybrid": "3",
-}
 
 def is_linkedin_url(value: str) -> bool:
     try:

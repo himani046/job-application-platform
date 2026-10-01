@@ -24,9 +24,13 @@ def canonical_job_url(url: str) -> str:
 
 
 def job_fingerprint(url: str, title: str = "") -> str:
+    """Return a stable identity for a canonical job URL.
+
+    The title parameter remains for API compatibility, but URL identity is
+    authoritative so a changed listing title does not create a duplicate job.
+    """
     canonical = canonical_job_url(url)
-    normalized_title = re.sub(r"\s+", " ", title.lower()).strip()
-    return hashlib.sha256(f"{canonical}|{normalized_title}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def normalize_job(item: dict, portal: str) -> JobRecord:

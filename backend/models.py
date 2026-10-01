@@ -120,6 +120,11 @@ class JobRecord(StrictModel):
     metadata: dict = Field(default_factory=dict)
 
 
+class JobMatchRequest(StrictModel):
+    profile_id: str
+    limit: int = Field(default=50, ge=1, le=200)
+
+
 class ApplicationRecord(StrictModel):
     id: str
     profile_id: str

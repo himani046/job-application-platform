@@ -933,7 +933,7 @@ class Engine:
             try:
                 for item in await frame.evaluate(FORM_SCRIPT):
                     item["frame"] = frame
-                    item["portal_hints"] = self.portal_field_hints(item)
+                    item["portal_hints"] = await self.portal_field_hints(item)
                     collected.append(item)
             except Exception:
                 continue
@@ -947,9 +947,34 @@ class Engine:
             f'[data-job-agent-id="{item["key"]}"]'
         )
 
-    def portal_field_hints(self, item: dict) -> list[str]:
-        haystack = " ".join(str(item.get(key, "")) for key in ("label", "meta", "accept"))
-        return [semantic for semantic, patterns in self.form_rules.field_patterns.items() if any(re.search(pattern, haystack, re.I) for pattern in patterns)]
+    async def portal_field_hints(self, item: dict) -> list[str]:
+        """Classify fields using semantic patterns and stable portal selectors."""
+        haystack = " ".join(
+            str(item.get(key, "")) for key in ("label", "meta", "accept")
+        )
+        hints = [
+            semantic
+            for semantic, patterns in self.form_rules.field_patterns.items()
+            if any(re.search(pattern, haystack, re.I) for pattern in patterns)
+        ]
+
+        if self.form_rules.field_selectors:
+            locator = self.locator(item)
+            for semantic, selectors in self.form_rules.field_selectors.items():
+                if semantic in hints:
+                    continue
+                for selector in selectors:
+                    try:
+                        if await locator.evaluate(
+                            "(el, value) => el.matches(value)",
+                            selector,
+                        ):
+                            hints.append(semantic)
+                            break
+                    except Exception:
+                        continue
+
+        return hints
 
     def button_pattern(self, kind: str, fallback: str) -> str:
         patterns = self.form_rules.next_button_patterns if kind == "next" else self.form_rules.submit_button_patterns

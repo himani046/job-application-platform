@@ -1,38 +1,29 @@
 import json
-from pathlib import Path
-from threading import Lock
+from datetime import datetime, timezone
 
-from backend.config import RUN_DIR
+from backend.database import connection, init_db
 
-_LOCK = Lock()
-
-
-def _path(run_id: str) -> Path:
-    if not run_id or "/" in run_id or "\\" in run_id:
-        raise ValueError("Invalid run ID.")
-    return RUN_DIR / f"{run_id}.json"
-
+init_db()
 
 def save_run(snapshot: dict) -> None:
-    with _LOCK:
-        _path(snapshot["id"]).write_text(
-            json.dumps(snapshot, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-
+    now=datetime.now(timezone.utc).isoformat()
+    created=snapshot.get("created_at",now)
+    with connection() as conn:
+        conn.execute("""INSERT INTO runs(id,status,created_at,updated_at,snapshot_json)
+                        VALUES(?,?,?,?,?)
+                        ON CONFLICT(id) DO UPDATE SET status=excluded.status,
+                        updated_at=excluded.updated_at,snapshot_json=excluded.snapshot_json""",
+                     (snapshot["id"],snapshot.get("status","queued"),created,now,
+                      json.dumps(snapshot,ensure_ascii=False)))
 
 def get_run(run_id: str) -> dict | None:
-    path = _path(run_id)
-    if not path.exists():
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
-
+    if not run_id or "/" in run_id or "\\" in run_id:
+        raise ValueError("Invalid run ID.")
+    with connection() as conn:
+        row=conn.execute("SELECT snapshot_json FROM runs WHERE id=?",(run_id,)).fetchone()
+    return json.loads(row["snapshot_json"]) if row else None
 
 def list_runs() -> list[dict]:
-    records = []
-    for path in RUN_DIR.glob("*.json"):
-        try:
-            records.append(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, ValueError):
-            continue
-    return sorted(records, key=lambda item: item.get("created_at", ""), reverse=True)
+    with connection() as conn:
+        rows=conn.execute("SELECT snapshot_json FROM runs ORDER BY created_at DESC,id DESC").fetchall()
+    return [json.loads(row["snapshot_json"]) for row in rows]

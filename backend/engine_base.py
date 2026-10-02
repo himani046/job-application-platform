@@ -1626,6 +1626,7 @@ class Engine:
 
         review = review_field(item)
         if review["sensitive"]:
+            self.sync_application("review", "sensitive_question", f"Sensitive field requires candidate review: {item['label']}.")
             options = [option["label"] for option in item["options"]]
             command = await self.run.pause(
                 "sensitive_review",
@@ -2044,6 +2045,7 @@ class Engine:
             submit_button = await self.find_button(self.button_pattern("submit", r"submit|submit application|send application|complete application|finish|finish application|submit my application|apply|apply now"))
 
             if submit_button and fields:
+                self.sync_application("awaiting_approval", "review_requested", "Application is ready for final human approval.")
                 command = await self.run.pause(
                     "submit",
                     (

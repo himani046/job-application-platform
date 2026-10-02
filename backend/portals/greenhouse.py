@@ -19,8 +19,8 @@ class GreenhouseAdapter(ATSAdapter):
             ".job__location",
         ),
         description_selectors=(
-            "#content",
             ".job__description",
+            "#content",
             "[data-qa='job-description']",
         ),
         job_id_selectors=(

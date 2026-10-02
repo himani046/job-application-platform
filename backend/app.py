@@ -14,6 +14,7 @@ from backend.run_queue import RunQueue
 from backend.scheduler import Scheduler
 from backend.jobs import job_fingerprint, normalize_job
 from backend.matcher import rank_jobs
+from backend.application_planner import extract_job_requirements
 from backend.application_store import (
     create_application,
     get_application,
@@ -271,6 +272,17 @@ async def health():
         "status": "ok",
         "version": app.version,
         "active_portals": list(manager.active_by_portal),
+        "queue": queue.snapshot(),
+    }
+
+
+@app.get("/ready")
+async def ready():
+    return {
+        "status": "ready",
+        "database": True,
+        "queue_workers": queue.snapshot().get("worker_count", 0),
+        "scheduler": True,
     }
 
 
@@ -403,6 +415,54 @@ async def match_jobs(request: JobMatchRequest):
         raise HTTPException(404, str(exc)) from exc
 
     return rank_jobs(profile, list_jobs(), request.limit)
+
+
+@app.get("/applications/review", dependencies=auth)
+async def application_review_queue():
+    records = list_applications()
+    return [
+        item.model_dump(mode="json")
+        for item in records
+        if item.status in {"review", "awaiting_approval", "missing_information", "validation_error"}
+        or item.sensitive_fields
+        or item.missing_fields
+        or item.validation_errors
+    ]
+
+
+@app.get("/jobs/{job_id}/application-plan", dependencies=auth)
+async def application_plan(job_id: str, profile_id: str):
+    try:
+        job = get_job(job_id)
+        profile = get_profile(profile_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+    requirements = extract_job_requirements(job.description)
+    profile_skills = {skill.lower() for skill in profile.skills}
+    matched = sorted(profile_skills.intersection(requirements["skills"]))
+    required_years = requirements["required_years"]
+    years_ok = (
+        required_years is None
+        or profile.years_of_experience is None
+        or profile.years_of_experience >= required_years
+    )
+
+    return {
+        "job": job.model_dump(mode="json"),
+        "requirements": requirements,
+        "profile_id": profile_id,
+        "matched_skills": matched,
+        "missing_skills": sorted(set(requirements["skills"]) - profile_skills),
+        "experience_requirement_satisfied": years_ok,
+        "planning_notes": [
+            "Profile facts are used as stored; the planner does not invent qualifications.",
+            "Sensitive or legal application questions still require explicit candidate review.",
+            "Final submission still requires human approval.",
+        ],
+    }
 
 
 @app.get("/applications/{application_id}", dependencies=auth)

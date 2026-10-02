@@ -424,6 +424,14 @@ async def create_run(request: RunRequest):
     resume_path = None
     application_id = None
 
+    if request.scheduled_at:
+        try:
+            scheduled_at = datetime.fromisoformat(request.scheduled_at.replace("Z", "+00:00"))
+            if scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+        except ValueError as exc:
+            raise HTTPException(400, f"Invalid scheduled_at: {exc}") from exc
+
     if request.mode == "apply":
         if not request.profile_id:
             raise HTTPException(400, "Select a saved profile.")
@@ -464,14 +472,13 @@ async def create_run(request: RunRequest):
     )
 
     if request.scheduled_at:
-        try:
-            await scheduler.schedule(run.id, request.scheduled_at, request.priority)
-            run.log(f"Run scheduled for {request.scheduled_at}.")
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(400, f"Invalid scheduled_at: {exc}") from exc
+        await scheduler.schedule(run.id, request.scheduled_at, request.priority)
+        run.log(f"Run scheduled for {request.scheduled_at}.")
+        save_run(run.snapshot())
     else:
         await queue.put(run.id, request.priority)
         run.log(f"Run queued with priority {request.priority}.")
+        save_run(run.snapshot())
 
     if application_id:
         record = get_application(application_id)

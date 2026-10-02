@@ -105,21 +105,34 @@ class Scheduler:
 
     async def _loop(self):
         while True:
-            if not self.items:
+            try:
+                with connection() as conn:
+                    row = conn.execute(
+                        """SELECT run_id,scheduled_at,priority FROM scheduled_runs
+                           ORDER BY scheduled_at,sequence LIMIT 1"""
+                    ).fetchone()
+                if not row:
+                    await asyncio.sleep(0.5)
+                    continue
+                when = datetime.fromisoformat(row["scheduled_at"].replace("Z", "+00:00"))
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+                delay = when.timestamp() - datetime.now(timezone.utc).timestamp()
+                if delay > 0:
+                    await asyncio.sleep(min(delay, 5))
+                    continue
+                run_id = row["run_id"]
+                with connection() as conn:
+                    deleted = conn.execute(
+                        "DELETE FROM scheduled_runs WHERE run_id=? AND scheduled_at=?",
+                        (run_id, row["scheduled_at"]),
+                    )
+                if deleted.rowcount:
+                    await self.enqueue(run_id, int(row["priority"]))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
                 await asyncio.sleep(0.5)
-                continue
-            timestamp, _, run_id, priority = self.items[0]
-            delay = timestamp - datetime.now(timezone.utc).timestamp()
-            if delay > 0:
-                await asyncio.sleep(min(delay, 5))
-                continue
-            heapq.heappop(self.items)
-            with connection() as conn:
-                result = conn.execute(
-                    "DELETE FROM scheduled_runs WHERE run_id=?", (run_id,)
-                )
-            if result.rowcount:
-                await self.enqueue(run_id, priority)
 
     async def shutdown(self):
         if self.task:

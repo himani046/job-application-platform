@@ -2069,6 +2069,75 @@ class Engine:
 
         return False
 
+    async def find_linkedin_easy_apply_button(self) -> dict | None:
+        """Find LinkedIn's Easy Apply control using a broader, page-specific scan."""
+        pattern = re.compile(r"easy\\s*apply", re.I)
+
+        for frame in self.page.frames:
+            try:
+                candidates = await frame.evaluate(
+                    """
+                    () => {
+                        const visible = el => {
+                            const style = getComputedStyle(el);
+                            const rect = el.getBoundingClientRect();
+                            return style.visibility !== "hidden" &&
+                                   style.display !== "none" &&
+                                   rect.width > 0 &&
+                                   rect.height > 0;
+                        };
+
+                        const clean = value =>
+                            (value || "").replace(/\\s+/g, " ").trim();
+
+                        const nodes = [
+                            ...document.querySelectorAll(
+                                'button, a, [role="button"], ' +
+                                '[aria-label*="Easy Apply" i], ' +
+                                '[data-control-name*="apply" i]'
+                            )
+                        ];
+
+                        const seen = new Set();
+                        return nodes
+                            .filter(visible)
+                            .map(el => {
+                                if (!el.dataset.jobAgentId) {
+                                    el.dataset.jobAgentId = crypto.randomUUID();
+                                }
+
+                                const text = clean(
+                                    el.innerText ||
+                                    el.getAttribute("aria-label") ||
+                                    el.getAttribute("title") ||
+                                    el.getAttribute("data-control-name") ||
+                                    ""
+                                );
+
+                                return {
+                                    key: el.dataset.jobAgentId,
+                                    text
+                                };
+                            })
+                            .filter(item => item.text)
+                            .filter(item => {
+                                if (seen.has(item.key)) return false;
+                                seen.add(item.key);
+                                return true;
+                            });
+                    }
+                    """
+                )
+
+                for button in candidates:
+                    if pattern.search(button["text"]):
+                        button["frame"] = frame
+                        return button
+            except Exception:
+                continue
+
+        return None
+
     async def open_linkedin_easy_apply(self) -> bool:
         """Open Easy Apply before any application-field inspection."""
         if self.run.request.portal != "linkedin":
@@ -2078,15 +2147,7 @@ class Engine:
             self.linkedin_easy_apply_open = True
             return True
 
-        entry_button = await self.find_button(
-            r"^easy apply$"
-        )
-
-        if not entry_button:
-            # Some LinkedIn layouts expose the label with extra whitespace.
-            entry_button = await self.find_button(
-                r"easy apply"
-            )
+        entry_button = await self.find_linkedin_easy_apply_button()
 
         if not entry_button:
             return False

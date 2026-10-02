@@ -1671,6 +1671,74 @@ class Engine:
         except (FileNotFoundError, ValueError):
             self.run.log("Application review state could not be persisted.", "warning")
 
+    async def read_field_value(self, item: dict) -> str:
+        """Read the candidate-visible value from a live form control."""
+        locator = self.locator(item)
+
+        if self.dynamic_form:
+            resolved, _strategy = await self.dynamic_form.resolve(item)
+            if resolved is not None:
+                locator = resolved
+
+        try:
+            kind = item.get("kind", "text")
+
+            if kind == "select":
+                return (
+                    await locator.locator("option:checked").inner_text()
+                ).strip()
+
+            if kind == "radio":
+                for option in item.get("options", []):
+                    option_locator = item["frame"].locator(
+                        f'[data-job-agent-id="{option["key"]}"]'
+                    )
+                    if await option_locator.is_checked():
+                        return option["label"].strip()
+
+                return ""
+
+            if kind == "checkbox":
+                return "Yes" if await locator.is_checked() else ""
+
+            value = await locator.input_value()
+            return value.strip()
+
+        except Exception:
+            try:
+                return (await locator.inner_text()).strip()
+            except Exception:
+                return ""
+
+    async def remember_manual_field_value(
+        self,
+        item: dict,
+        previous_value: str,
+    ) -> bool:
+        """Persist a newly entered browser value to this run's profile."""
+        if not self.profile or not self.run.request.profile_id:
+            return False
+
+        current_value = await self.read_field_value(item)
+
+        if not current_value or current_value == previous_value:
+            return False
+
+        # Never silently convert an unchanged placeholder/default into memory.
+        if current_value.lower() in {"select", "choose", "please select", "please choose"}:
+            return False
+
+        remember_answer(
+            self.run.request.profile_id,
+            item["label"],
+            current_value,
+        )
+
+        self.run.log(
+            f"Remembered manual answer for this profile: {item['label']}"
+        )
+        return True
+
     async def answer_field(self, item: dict) -> bool:
         key = (item["frame"].url, item["key"])
 
@@ -1684,6 +1752,7 @@ class Engine:
         if review["sensitive"]:
             self.sync_application("review", "sensitive_question", f"Sensitive field requires candidate review: {item['label']}.")
             options = [option["label"] for option in item["options"]]
+            previous_value = await self.read_field_value(item)
             command = await self.run.pause(
                 "sensitive_review",
                 (
@@ -1699,6 +1768,7 @@ class Engine:
                 review_required=True,
             )
             if command.action == "resume":
+                await self.remember_manual_field_value(item, previous_value)
                 if item["filled"]:
                     self.handled.add(key)
                     self.run.log(f"Candidate reviewed existing sensitive field: {item['label']}")
@@ -1765,6 +1835,8 @@ class Engine:
         if not item["required"]:
             allowed.append("skip")
 
+        previous_value = await self.read_field_value(item)
+
         command = await self.run.pause(
             "answer",
             f"Review the answer for: {item['label']}",
@@ -1786,6 +1858,7 @@ class Engine:
 
         if command.action == "resume":
             await self.settle()
+            await self.remember_manual_field_value(item, previous_value)
             return True
 
         approved = command.answer or ""
@@ -1798,6 +1871,7 @@ class Engine:
             return True
 
         if not await self.fill(item, approved):
+            manual_previous_value = await self.read_field_value(item)
             await self.run.pause(
                 "widget",
                 (
@@ -1810,6 +1884,7 @@ class Engine:
             )
 
             await self.settle()
+            await self.remember_manual_field_value(item, manual_previous_value)
             return True
 
         self.handled.add(key)

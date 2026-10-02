@@ -522,8 +522,6 @@ class Engine:
         self.resume_path = resume_path
         self.adapter = get_adapter(run.request.portal, run.request)
         self.form_rules = self.adapter.form_rules()
-        self.dynamic_form = DynamicFormExecutor(run=run.page if False else None) if False else None
-
         self.context: BrowserContext | None = None
         self.page: Page | None = None
 

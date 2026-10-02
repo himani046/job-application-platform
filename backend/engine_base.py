@@ -28,7 +28,7 @@ from backend.models import Profile, RunCommand, RunRequest
 from backend.parser import suggest_answer
 from backend.storage import normalize_question, remember_answer
 from backend.portals import get_adapter
-from backend.application_prepare import review_field
+from backend.application_prepare import review_field, submission_blockers
 from backend.application_store import get_application, record_event
 
 FORM_SCRIPT = r"""
@@ -2022,19 +2022,21 @@ class Engine:
                 continue
 
             self.update_application_review(fields, errors)
-            missing_required = [
-                item["label"] for item in fields
-                if item["required"] and not item["filled"] and item["kind"] != "file"
-            ]
-            if missing_required:
-                self.sync_application("missing_information", "missing_information", "Required application information is missing.")
-                await self.run.pause(
-                    "missing_information",
-                    "Required application fields are still incomplete. Complete them in the browser, then Resume.",
-                    ["resume"],
-                    missing_fields=missing_required,
-                )
-                continue
+            blockers = submission_blockers(fields, errors, human_approved=True)
+            if blockers:
+                missing_required = [
+                    item["label"] for item in fields
+                    if item["required"] and not item["filled"] and item["kind"] != "file"
+                ]
+                if missing_required:
+                    self.sync_application("missing_information", "missing_information", "Required application information is missing.")
+                    await self.run.pause(
+                        "missing_information",
+                        "Required application fields are still incomplete. Complete them in the browser, then Resume.",
+                        ["resume"],
+                        missing_fields=missing_required,
+                    )
+                    continue
 
             submit_button = await self.find_button(self.button_pattern("submit", r"submit|submit application|send application|complete application|finish|finish application|submit my application|apply|apply now"))
 

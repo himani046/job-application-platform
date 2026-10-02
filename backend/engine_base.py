@@ -1131,9 +1131,21 @@ class Engine:
                         if value:
                             job[key] = value[:12000 if key == "description" else 500]
 
+                    job_id = (data.get("job_id") or "").strip()
+                    if not job_id:
+                        parsed_job_url = urlparse(url)
+                        job_id = parsed_job_url.path.rstrip("/").split("/")[-1]
+                        query_match = re.search(
+                            r"(?:gh_jid|lever-job-id)=([A-Za-z0-9_-]+)",
+                            parsed_job_url.query,
+                            re.I,
+                        )
+                        if query_match:
+                            job_id = query_match.group(1)
+
                     job.setdefault("metadata", {})
                     job["metadata"]["source"] = "portal_job_page"
-                    job["metadata"]["job_id"] = data.get("job_id") or ""
+                    job["metadata"]["job_id"] = job_id
 
                     self.run.log(
                         f"Enriched {index}/{len(candidates)}: "

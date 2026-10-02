@@ -758,6 +758,39 @@ with automation_tab:
                 )
             else:
                 st.info("No application records yet.")
+
+            if application_records:
+                st.markdown("#### Application review state")
+                application_choices = {
+                    f"{item.get('title') or 'Untitled job'} — {item.get('status', 'unknown')} — {item['id'][:8]}": item
+                    for item in application_records
+                }
+                selected_application_label = st.selectbox(
+                    "Application",
+                    options=list(application_choices),
+                    key="application-review-choice",
+                )
+                selected_application = application_choices[selected_application_label]
+                review_fields = selected_application.get("review_fields", [])
+                if review_fields:
+                    rows = []
+                    for field in review_fields:
+                        rows.append({
+                            "Field": field.get("label", ""),
+                            "Category": field.get("category", ""),
+                            "Required": "Yes" if field.get("required") else "No",
+                            "Filled": "Yes" if field.get("filled") else "No",
+                            "Review": "NEEDS REVIEW" if field.get("review_required") else "Ready",
+                        })
+                    st.dataframe(rows, use_container_width=True, hide_index=True)
+                if selected_application.get("missing_fields"):
+                    st.error("Missing required information: " + ", ".join(selected_application["missing_fields"]))
+                if selected_application.get("sensitive_fields"):
+                    st.warning("Sensitive fields require explicit review: " + ", ".join(selected_application["sensitive_fields"]))
+                if selected_application.get("validation_errors"):
+                    st.error("Validation errors: " + " | ".join(selected_application["validation_errors"]))
+                if selected_application.get("human_approved"):
+                    st.success("Human approval recorded for the final submission action.")
         except RuntimeError as exc:
             st.warning(f"Application history unavailable: {exc}")
 

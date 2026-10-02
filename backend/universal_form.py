@@ -74,7 +74,7 @@ def answer_from_profile(spec: FieldSpec, profile: Any) -> str | None:
     answer = values.get(spec.semantic)
     if spec.semantic == "years_experience":
         label = spec.label.lower()
-        if re.search(r"with\\s+[a-z0-9+#.]+|using\\s+[a-z0-9+#.]+|in\\s+[a-z0-9+#.]+", label):
+        if re.search(r"with\s+[a-z0-9+#.]+|using\s+[a-z0-9+#.]+|in\s+[a-z0-9+#.]+", label):
             return None
     if answer is not None and str(answer).strip():
         return str(answer).strip()

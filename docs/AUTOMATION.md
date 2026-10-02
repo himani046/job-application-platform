@@ -34,6 +34,27 @@
 
 Copy `.env.example` to `.env`, configure `LOCAL_API_TOKEN`, then run the existing unit-test and API/frontend commands from the project root.
 
+### Windows + Playwright
+
+For Windows local development, **do not use Uvicorn's `--reload` mode for browser runs**. Uvicorn's reload supervisor can install a Windows selector event loop, while Playwright needs asyncio subprocess support.
+
+Use the project launcher instead:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python run_server.py
+```
+
+This launcher explicitly selects the Windows Proactor event-loop policy and starts Uvicorn without reload. After changing backend code, stop and restart the server.
+
+The direct Uvicorn command is suitable for API-only work:
+
+```powershell
+python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```
+
+Do not add `--reload` when running Playwright automation on Windows.
+
 ## Docker
 
 Use `docker compose up --build` to start the API and Streamlit frontend with persistent local state.

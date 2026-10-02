@@ -1,7 +1,7 @@
 from urllib.parse import urlparse
 
 from backend.models import Portal, RunRequest
-from backend.portals.base import PortalCapabilities
+from backend.portals.base import JobPageRules, PortalCapabilities
 
 
 _HOSTS = {
@@ -27,6 +27,9 @@ class ATSAdapter:
             host == allowed or host.endswith("." + allowed)
             for allowed in _HOSTS.get(self.portal, ())
         )
+
+    def job_page_rules(self) -> JobPageRules:
+        return self.capabilities.job_page_rules
 
     def build_discovery_url(self, request: RunRequest) -> str | None:
         supplied = (request.job_url or "").strip()

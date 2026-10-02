@@ -200,8 +200,14 @@ def live_console():
             )
 
             remember = st.checkbox(
-                "Remember this exact question and approved answer",
+                "Remember this answer for this resume profile",
                 key=f"remember-{token}",
+                help=(
+                    "The answer is saved only to the selected resume profile "
+                    "and can be reused on future applications. If you fill "
+                    "the field directly in the browser and click Resume, "
+                    "the platform can also remember the newly entered value."
+                ),
             )
 
             command_button(

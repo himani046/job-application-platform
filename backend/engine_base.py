@@ -30,7 +30,7 @@ from backend.storage import normalize_question, remember_answer
 from backend.portals import get_adapter
 from backend.application_prepare import review_field, submission_blockers
 from backend.application_store import get_application, record_event
-from backend.universal_form import build_field_spec
+from backend.universal_form import answer_from_profile, build_field_spec
 
 FORM_SCRIPT = r"""
 () => {
@@ -1662,7 +1662,10 @@ class Engine:
                     return True
             return True
 
+        spec = build_field_spec(item)
         answer = self.known_answer(item)
+        if answer is None:
+            answer = answer_from_profile(spec, self.profile)
 
         if answer is not None:
             if await self.fill(item, answer):

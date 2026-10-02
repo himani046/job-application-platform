@@ -653,6 +653,20 @@ with automation_tab:
                 "before links are collected."
             )
 
+    priority = st.slider(
+        "Queue priority",
+        min_value=1,
+        max_value=1000,
+        value=100,
+        help="Lower values run earlier. Priority only affects queued work.",
+    )
+
+    scheduled_at = st.text_input(
+        "Schedule for later (optional ISO-8601)",
+        placeholder="2026-10-02T15:30:00+05:30",
+        help="Leave blank to queue immediately. Scheduled runs remain queued until their time.",
+    ).strip() or None
+
     headless = st.checkbox(
         "Run headless",
         value=False,
@@ -700,6 +714,8 @@ with automation_tab:
                     "search_location": search_location,
                     "workplace_type": workplace_type,
                     "headless": headless,
+                    "priority": priority,
+                    "scheduled_at": scheduled_at,
                 }
             )
         except RuntimeError as exc:
@@ -740,6 +756,20 @@ with automation_tab:
     live_console()
 
     st.divider()
+    st.subheader("Operations")
+    try:
+        operations = api("GET", "/queue")
+        q = operations["queue"]
+        s = operations["scheduler"]
+        metric_cols = st.columns(4)
+        metric_cols[0].metric("Queued", q["queued"])
+        metric_cols[1].metric("Workers", q["running_workers"])
+        metric_cols[2].metric("Scheduled", s["scheduled"])
+        metric_cols[3].metric("Active portals", len(operations["active_portals"]))
+    except RuntimeError as exc:
+        st.caption(f"Queue status unavailable: {exc}")
+
+    st.divider()
     history_tab, jobs_tab, matches_tab = st.tabs(
         ["Application history", "Saved jobs", "Profile matches"]
     )
@@ -760,6 +790,17 @@ with automation_tab:
                 st.info("No application records yet.")
 
             if application_records:
+                try:
+                    analytics = api("GET", "/analytics/applications")
+                    metric_cols = st.columns(4)
+                    metric_cols[0].metric("Applications", analytics["total"])
+                    metric_cols[1].metric("Submitted", analytics["submitted"])
+                    metric_cols[2].metric("Submission rate", f"{analytics['submission_rate']:.0%}")
+                    metric_cols[3].metric("Avg. lifecycle", f"{analytics['average_lifecycle_seconds'] / 60:.1f} min")
+                    st.caption("Status breakdown: " + ", ".join(f"{key}: {value}" for key, value in analytics["by_status"].items()))
+                except RuntimeError as exc:
+                    st.caption(f"Analytics unavailable: {exc}")
+
                 st.markdown("#### Application review state")
                 application_choices = {
                     f"{item.get('title') or 'Untitled job'} — {item.get('status', 'unknown')} — {item['id'][:8]}": item

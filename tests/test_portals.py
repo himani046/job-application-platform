@@ -21,6 +21,19 @@ class PortalAdapterTests(unittest.TestCase):
         self.assertIn("f_WT=2", url)
         self.assertTrue(adapter.accepts_url(url))
 
+    def test_linkedin_discovery_ignores_stale_non_linkedin_url(self):
+        request = RunRequest(
+            mode="discover",
+            portal="linkedin",
+            keywords="Python Developer",
+            search_location="India",
+            job_url="",
+        )
+        adapter = get_adapter("linkedin", request)
+        url = adapter.build_discovery_url(request)
+
+        self.assertIn("https://www.linkedin.com/jobs/search/", url)
+
     def test_naukri_builds_keyword_search(self):
         request = RunRequest(
             mode="discover",

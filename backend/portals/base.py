@@ -18,6 +18,17 @@ class PortalFormRules:
 
 
 @dataclass(frozen=True)
+class JobPageRules:
+    """Semantic selectors for extracting structured job-page metadata."""
+
+    title_selectors: tuple[str, ...] = ()
+    company_selectors: tuple[str, ...] = ()
+    location_selectors: tuple[str, ...] = ()
+    description_selectors: tuple[str, ...] = ()
+    job_id_selectors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class PortalCapabilities:
     portal: Portal
     display_name: str
@@ -26,6 +37,7 @@ class PortalCapabilities:
     supports_application: bool = True
     notes: str = ""
     form_rules: PortalFormRules = field(default_factory=PortalFormRules)
+    job_page_rules: JobPageRules = field(default_factory=JobPageRules)
 
 
 class PortalAdapter(Protocol):
@@ -38,6 +50,9 @@ class PortalAdapter(Protocol):
         ...
 
     def form_rules(self) -> PortalFormRules:
+        ...
+
+    def job_page_rules(self) -> JobPageRules:
         ...
 
 
@@ -67,3 +82,6 @@ class GenericPortalAdapter:
 
     def form_rules(self) -> PortalFormRules:
         return self.capabilities.form_rules
+
+    def job_page_rules(self) -> JobPageRules:
+        return self.capabilities.job_page_rules

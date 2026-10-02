@@ -28,6 +28,8 @@ from backend.models import Profile, RunCommand, RunRequest
 from backend.parser import suggest_answer
 from backend.storage import normalize_question, remember_answer
 from backend.portals import get_adapter
+from backend.application_prepare import review_field
+from backend.application_store import get_application, record_event
 
 FORM_SCRIPT = r"""
 () => {
@@ -527,6 +529,7 @@ class Engine:
         self.navigation_attempts: dict[tuple, int] = {}
 
         self.submission_clicked = False
+        self.review_snapshot: list[dict] = []
 
     @property
     def manual_linkedin_discovery(self) -> bool:
@@ -1579,6 +1582,28 @@ class Engine:
 
         return False
 
+    def update_application_review(self, fields: list[dict], errors: list[str] | None = None) -> None:
+        """Persist a review snapshot without treating it as submission approval."""
+        if not self.run.application_id:
+            return
+        try:
+            application = get_application(self.run.application_id)
+            snapshot = [review_field(item) for item in fields]
+            application.review_fields = snapshot
+            application.missing_fields = [item["label"] for item in snapshot if item["required"] and not item["filled"]]
+            application.sensitive_fields = [item["label"] for item in snapshot if item["sensitive"]]
+            application.validation_errors = list(errors or [])
+            record_event(
+                application,
+                "review_snapshot",
+                "Application review state updated.",
+                missing_fields=application.missing_fields,
+                sensitive_fields=application.sensitive_fields,
+                validation_errors=application.validation_errors,
+            )
+        except (FileNotFoundError, ValueError):
+            self.run.log("Application review state could not be persisted.", "warning")
+
     async def answer_field(self, item: dict) -> bool:
         key = (item["frame"].url, item["key"])
 
@@ -1587,6 +1612,35 @@ class Engine:
 
         if item["kind"] == "file":
             return False
+
+        review = review_field(item)
+        if review["sensitive"]:
+            options = [option["label"] for option in item["options"]]
+            command = await self.run.pause(
+                "sensitive_review",
+                (
+                    f"Review sensitive application question: {item['label']}. "
+                    "The platform will not infer or silently answer this field. "
+                    "Provide the candidate's factual answer or Resume to review it manually."
+                ),
+                ["answer", "resume", "skip"] if not item["required"] else ["answer", "resume"],
+                question=item["label"],
+                category=review["category"],
+                options=options,
+                current_value="filled" if item["filled"] else "",
+                review_required=True,
+            )
+            if command.action == "resume":
+                return True
+            if command.action == "skip":
+                self.handled.add(key)
+                return True
+            if command.action == "answer" and command.answer:
+                if await self.fill(item, command.answer):
+                    self.handled.add(key)
+                    self.run.log(f"Candidate-reviewed field filled: {item['label']}")
+                    return True
+            return True
 
         answer = self.known_answer(item)
 
@@ -1855,6 +1909,7 @@ class Engine:
             )
 
             fields = await self.fields()
+            self.update_application_review(fields)
 
             try:
                 if await self.upload_resumes(fields):
@@ -1952,6 +2007,20 @@ class Engine:
                 await self.locator(next_button).click()
                 continue
 
+            self.update_application_review(fields, errors)
+            missing_required = [
+                item["label"] for item in fields
+                if item["required"] and not item["filled"] and item["kind"] != "file"
+            ]
+            if missing_required:
+                await self.run.pause(
+                    "missing_information",
+                    "Required application fields are still incomplete. Complete them in the browser, then Resume.",
+                    ["resume"],
+                    missing_fields=missing_required,
+                )
+                continue
+
             submit_button = await self.find_button(self.button_pattern("submit", r"submit|submit application|send application|complete application|finish|finish application|submit my application|apply|apply now"))
 
             if submit_button and fields:
@@ -1978,6 +2047,14 @@ class Engine:
                     )
 
                 self.submission_clicked = True
+                if self.run.application_id:
+                    try:
+                        application = get_application(self.run.application_id)
+                        application.human_approved = True
+                        application.status = "submitting"
+                        record_event(application, "approved", "Human approval granted for the final submission click.")
+                    except (FileNotFoundError, ValueError):
+                        pass
 
                 self.run.log(
                     "Clicking user-approved submission: "

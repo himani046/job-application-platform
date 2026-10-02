@@ -251,7 +251,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Local Job Application Platform",
-    version="2.3.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
 

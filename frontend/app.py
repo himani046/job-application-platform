@@ -610,11 +610,19 @@ with automation_tab:
     }[mode_label]
 
     job_url = st.text_input(
-        "Job URL, careers-board URL, or login URL",
+        (
+            "Job URL"
+            if mode == "apply"
+            else "Careers-board / search URL"
+            if mode == "discover"
+            else "Job URL, careers-board URL, or login URL"
+        ),
+        key=f"automation-job-url-{mode}",
         help=(
             "Application mode requires a specific job URL. "
             "ATS discovery requires the employer's careers-board URL. "
-            "For LinkedIn discovery, leave empty or provide a search URL."
+            "For LinkedIn discovery, leave empty or provide a LinkedIn "
+            "jobs/search URL."
         ),
     ).strip()
 

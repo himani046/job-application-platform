@@ -3,3 +3,12 @@
 .venv/
 __pycache__/
 node_modules/
+# Local runtime state and user data
+data/applications/
+data/browsers/
+data/jobs/
+data/profiles/*
+data/resumes/*
+data/runs/
+data/queue_state.json
+data/schedule_state.json

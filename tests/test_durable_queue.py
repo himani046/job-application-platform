@@ -79,6 +79,29 @@ class DurableSchedulerTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await restarted.cancel("run-1"))
             self.assertEqual(restarted.snapshot()["scheduled"], 0)
             await restarted.shutdown()
+    async def test_two_schedulers_emit_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            import backend.database as database
+            original = database.DATABASE_PATH
+            database.DATABASE_PATH = Path(tmp) / "platform.db"
+            try:
+                database.init_db()
+                emitted = []
+
+                async def enqueue(run_id, priority):
+                    emitted.append((run_id, priority))
+
+                first = Scheduler(enqueue)
+                second = Scheduler(enqueue)
+                await first.schedule("run-scheduled", "2026-10-02T00:00:00+00:00", 3)
+                await asyncio.gather(first.start(), second.start())
+                await asyncio.sleep(0.2)
+                self.assertEqual(emitted, [("run-scheduled", 3)])
+                await first.shutdown()
+                await second.shutdown()
+            finally:
+                database.DATABASE_PATH = original
+
 
 
 if __name__ == "__main__":

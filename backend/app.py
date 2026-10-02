@@ -291,6 +291,23 @@ async def portals():
     return list_adapters()
 
 
+@app.get("/metrics", dependencies=auth)
+async def metrics():
+    applications = list_applications()
+    statuses = {}
+    for item in applications:
+        statuses[item.status] = statuses.get(item.status, 0) + 1
+    return {
+        "applications_total": len(applications),
+        "applications_by_status": statuses,
+        "jobs_saved": len(list_jobs()),
+        "runs_in_memory": len(manager.runs),
+        "active_portals": len(manager.active_by_portal),
+        "queue": queue.snapshot(),
+        "scheduler": scheduler.snapshot(),
+    }
+
+
 @app.get("/profiles", dependencies=auth)
 async def profiles():
     return list_profiles()

@@ -27,3 +27,16 @@ def list_runs() -> list[dict]:
     with connection() as conn:
         rows=conn.execute("SELECT snapshot_json FROM runs ORDER BY created_at DESC,id DESC").fetchall()
     return [json.loads(row["snapshot_json"]) for row in rows]
+
+
+def migrate_legacy_runs(run_dir) -> int:
+    count = 0
+    for path in run_dir.glob("*.json"):
+        try:
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
+            if snapshot.get("id") and get_run(snapshot["id"]) is None:
+                save_run(snapshot)
+                count += 1
+        except (OSError, ValueError):
+            continue
+    return count

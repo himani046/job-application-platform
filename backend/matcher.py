@@ -65,7 +65,7 @@ def match_job(profile: Profile, job: JobRecord) -> MatchResult:
     title_overlap = len(profile_tokens & title_tokens)
 
     # Skill relevance is intentionally explainable and deterministic.
-    skill_score = min(len(overlap) / 12.0, 1.0)
+    skill_score = min(len(overlap) / 6.0, 1.0)
     title_score = min(title_overlap / max(len(title_tokens), 1), 1.0)
 
     required_years = _required_years(job_text)

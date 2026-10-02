@@ -468,12 +468,24 @@ async def read_run(run_id: str):
 async def command_run(run_id: str, command: RunCommand):
     run = manager.get(run_id)
 
-    if not run.task or run.task.done():
-        raise HTTPException(409, "This run is no longer active.")
-
     if command.action == "stop":
+        if run.status == "queued" and (not run.task or run.task.done()):
+            run.status = "stopped"
+            if run.application_id:
+                try:
+                    application = get_application(run.application_id)
+                    application.status = "stopped"
+                    record_event(application, "stopped", "Queued run cancelled before browser execution.")
+                except (FileNotFoundError, ValueError):
+                    pass
+            return {"accepted": True}
+        if not run.task or run.task.done():
+            raise HTTPException(409, "This run is no longer active.")
         run.task.cancel()
         return {"accepted": True}
+
+    if not run.task or run.task.done():
+        raise HTTPException(409, "This run is no longer active.")
 
     pending = run.pending
     if not pending or run.status != "waiting":

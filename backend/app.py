@@ -9,6 +9,9 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from backend.job_store import get_job, list_jobs, upsert_jobs
+from backend.analytics import summarize_applications
+from backend.run_queue import RunQueue
+from backend.scheduler import Scheduler
 from backend.jobs import job_fingerprint, normalize_job
 from backend.matcher import rank_jobs
 from backend.application_store import (
@@ -88,11 +91,24 @@ class RunManager:
         run.application_id = application_id
         self.runs[run.id] = run
         self.active_by_portal[request.portal] = run.id
-        run.task = asyncio.create_task(
-            self.drive(run, profile, resume_path),
-            name=f"browser-run-{run.id}",
-        )
         return run
+
+    async def drive_queued(self, run_id: str) -> None:
+        run = self.runs.get(run_id)
+        if not run:
+            return
+        profile = None
+        resume_path = None
+        if run.request.mode == "apply":
+            try:
+                profile = get_profile(run.request.profile_id or "")
+                resume_path = get_resume_path(run.request.profile_id or "")
+            except (ValueError, FileNotFoundError) as exc:
+                run.status = "failed"
+                run.log(f"Queued run could not load its profile: {exc}", "error")
+                return
+        run.task = asyncio.current_task()
+        await self.drive(run, profile, resume_path)
 
     async def drive(
         self,
@@ -101,6 +117,12 @@ class RunManager:
         resume_path: Path | None,
     ) -> None:
         try:
+            active_id = self.active_by_portal.get(run.request.portal)
+            if active_id and active_id != run.id:
+                await queue.put(run.id, run.request.priority)
+                return
+            self.active_by_portal[run.request.portal] = run.id
+            run.status = "running"
             await Engine(run, profile, resume_path).execute()
 
             if run.request.mode == "discover" and run.results:
@@ -168,6 +190,8 @@ class RunManager:
 
 
 manager = RunManager()
+queue = RunQueue(worker_count=2)
+scheduler = Scheduler(queue.put)
 
 
 @asynccontextmanager
@@ -176,7 +200,12 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "Configure LOCAL_API_TOKEN with at least 24 characters in .env."
         )
+    queue.bind(manager.drive_queued)
+    await queue.start()
+    await scheduler.start()
     yield
+    await scheduler.shutdown()
+    await queue.shutdown()
     await manager.shutdown()
 
 
@@ -297,6 +326,21 @@ async def applications():
     return [item.model_dump(mode="json") for item in list_applications()]
 
 
+@app.get("/analytics/applications", dependencies=auth)
+async def application_analytics():
+    return summarize_applications(list_applications())
+
+
+@app.get("/queue", dependencies=auth)
+async def queue_status():
+    return {"queue": queue.snapshot(), "scheduler": scheduler.snapshot(), "active_portals": dict(manager.active_by_portal)}
+
+
+@app.get("/schedules", dependencies=auth)
+async def schedules():
+    return scheduler.snapshot()
+
+
 @app.get("/jobs", dependencies=auth)
 async def jobs():
     return [item.model_dump(mode="json") for item in list_jobs()]
@@ -381,6 +425,16 @@ async def create_run(request: RunRequest):
         resume_path,
         application_id=application_id,
     )
+
+    if request.scheduled_at:
+        try:
+            await scheduler.schedule(run.id, request.scheduled_at)
+            run.log(f"Run scheduled for {request.scheduled_at}.")
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, f"Invalid scheduled_at: {exc}") from exc
+    else:
+        await queue.put(run.id, request.priority)
+        run.log(f"Run queued with priority {request.priority}.")
 
     if application_id:
         record = get_application(application_id)

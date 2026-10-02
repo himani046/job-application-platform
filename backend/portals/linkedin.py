@@ -27,9 +27,20 @@ class LinkedInAdapter:
             )
 
         supplied = (request.job_url or "").strip()
-        parsed = urlparse(supplied or "https://www.linkedin.com/jobs/search/")
-        if not self.accepts_url(parsed.geturl()):
-            raise ValueError("LinkedIn discovery requires a LinkedIn URL.")
+
+        # Discovery can be driven entirely by keywords/location. A stale
+        # application URL should never become the discovery target.
+        if not supplied:
+            parsed = urlparse("https://www.linkedin.com/jobs/search/")
+        else:
+            parsed = urlparse(supplied)
+            if not self.accepts_url(parsed.geturl()):
+                raise ValueError(
+                    "For LinkedIn discovery, the optional URL must be a "
+                    "LinkedIn jobs/search URL. Leave it empty to build the "
+                    "search from keywords and location."
+                )
+
         if parsed.path.rstrip("/") != "/jobs/search":
             raise ValueError(
                 "Use a LinkedIn /jobs/search/ URL for discovery, or leave it empty."

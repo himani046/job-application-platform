@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS applications (
     sensitive_fields_json TEXT NOT NULL DEFAULT '[]', validation_errors_json TEXT NOT NULL DEFAULT '[]',
     human_approved INTEGER NOT NULL DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS application_events (
+CREATE TABLE IF NOT EXISTS runs (\n    id TEXT PRIMARY KEY,\n    status TEXT NOT NULL DEFAULT 'queued',\n    created_at TEXT NOT NULL,\n    updated_at TEXT NOT NULL,\n    snapshot_json TEXT NOT NULL\n);\nCREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at DESC);\n\nCREATE TABLE IF NOT EXISTS application_events (
     id TEXT PRIMARY KEY,
     application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
     event_type TEXT NOT NULL, event_time TEXT NOT NULL, message TEXT NOT NULL,

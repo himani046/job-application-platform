@@ -139,6 +139,7 @@ class ApplicationRecord(StrictModel):
     resume_version: str | None = None
     run_id: str | None = None
     confirmation_text: str | None = None
+    application_key: str | None = None
     created_at: str
     updated_at: str
     events: list[dict] = Field(default_factory=list)

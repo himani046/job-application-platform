@@ -1,10 +1,33 @@
 from backend.portals.ats import ATSAdapter
-from backend.portals.base import PortalCapabilities, PortalFormRules
+from backend.portals.base import JobPageRules, PortalCapabilities, PortalFormRules
 from backend.models import Portal
 
 
 class GreenhouseAdapter(ATSAdapter):
     """Greenhouse-specific semantics layered over the generic form engine."""
+
+    JOB_PAGE_RULES = JobPageRules(
+        title_selectors=("h1", "[data-qa='job-title']"),
+        company_selectors=(
+            "[data-qa='company-name']",
+            ".company-name",
+            "meta[property='og:site_name']",
+        ),
+        location_selectors=(
+            ".location",
+            "[data-qa='job-location']",
+            ".job__location",
+        ),
+        description_selectors=(
+            "#content",
+            ".job__description",
+            "[data-qa='job-description']",
+        ),
+        job_id_selectors=(
+            "meta[name='job-id']",
+            "[data-qa='job-id']",
+        ),
+    )
 
     RULES = PortalFormRules(
         field_selectors={
@@ -70,3 +93,6 @@ class GreenhouseAdapter(ATSAdapter):
 
     def form_rules(self) -> PortalFormRules:
         return self.RULES
+
+    def job_page_rules(self) -> JobPageRules:
+        return self.JOB_PAGE_RULES

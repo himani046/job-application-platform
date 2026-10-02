@@ -37,6 +37,31 @@ class DurableQueueTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.05)
             self.assertFalse(called.is_set())
             await queue.shutdown()
+    async def test_two_queue_instances_atomic_claim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            import backend.database as database
+            original = database.DATABASE_PATH
+            database.DATABASE_PATH = Path(tmp) / "platform.db"
+            try:
+                database.init_db()
+                first = RunQueue(worker_count=1, lease_seconds=30)
+                second = RunQueue(worker_count=1, lease_seconds=30)
+                await first.put("run-atomic", priority=1)
+                claims = []
+
+                async def handler(run_id):
+                    claims.append(run_id)
+
+                first.bind(handler)
+                second.bind(handler)
+                await asyncio.gather(first.start(), second.start())
+                await asyncio.sleep(0.2)
+                self.assertEqual(claims, ["run-atomic"])
+                await first.shutdown()
+                await second.shutdown()
+            finally:
+                database.DATABASE_PATH = original
+
 
 
 class DurableSchedulerTests(unittest.IsolatedAsyncioTestCase):

@@ -1,4 +1,5 @@
 import json
+import hashlib
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -17,12 +18,21 @@ CREATE TABLE IF NOT EXISTS applications (
     job_url TEXT NOT NULL, portal TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
     company TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'queued',
     resume_version TEXT, run_id TEXT, confirmation_text TEXT,
+    application_key TEXT,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
     review_fields_json TEXT NOT NULL DEFAULT '[]', missing_fields_json TEXT NOT NULL DEFAULT '[]',
     sensitive_fields_json TEXT NOT NULL DEFAULT '[]', validation_errors_json TEXT NOT NULL DEFAULT '[]',
     human_approved INTEGER NOT NULL DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS runs (\n    id TEXT PRIMARY KEY,\n    status TEXT NOT NULL DEFAULT 'queued',\n    created_at TEXT NOT NULL,\n    updated_at TEXT NOT NULL,\n    snapshot_json TEXT NOT NULL\n);\nCREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at DESC);\n\nCREATE TABLE IF NOT EXISTS application_events (
+CREATE TABLE IF NOT EXISTS runs (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'queued',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at DESC);
+CREATE TABLE IF NOT EXISTS application_events (
     id TEXT PRIMARY KEY,
     application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
     event_type TEXT NOT NULL, event_time TEXT NOT NULL, message TEXT NOT NULL,
@@ -36,8 +46,15 @@ CREATE INDEX IF NOT EXISTS idx_application_events_application_id ON application_
 CREATE INDEX IF NOT EXISTS idx_application_events_time ON application_events(event_time);
 """
 
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def application_key(profile_id: str, portal: str, job_id: str) -> str:
+    raw = f"{profile_id}|{portal}|{job_id}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
 
 @contextmanager
 def connection():
@@ -56,12 +73,43 @@ def connection():
     finally:
         conn.close()
 
+
 def init_db() -> None:
     with connection() as conn:
         conn.executescript(SCHEMA)
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(applications)").fetchall()
+        }
+        if "application_key" not in columns:
+            conn.execute("ALTER TABLE applications ADD COLUMN application_key TEXT")
+
+        rows = conn.execute(
+            "SELECT id, profile_id, portal, job_id, application_key "
+            "FROM applications ORDER BY created_at ASC, id ASC"
+        ).fetchall()
+        seen = set()
+        for row in rows:
+            key = row["application_key"] or application_key(
+                row["profile_id"], row["portal"], row["job_id"]
+            )
+            if key in seen:
+                key = f"{key}:{row['id']}"
+            seen.add(key)
+            if row["application_key"] != key:
+                conn.execute(
+                    "UPDATE applications SET application_key=? WHERE id=?",
+                    (key, row["id"]),
+                )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "idx_applications_application_key ON applications(application_key)"
+        )
+
 
 def dumps(value) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
 
 def loads(value, default):
     try:

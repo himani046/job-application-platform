@@ -106,26 +106,61 @@ FORM_SCRIPT = r"""
             .map(id => document.getElementById(id)?.innerText || "")
             .join(" ");
 
+        const describedBy = (el.getAttribute("aria-describedby") || "")
+            .split(/\s+/)
+            .map(id => document.getElementById(id)?.innerText || "")
+            .join(" ");
+
         const container = el.closest(
             '[data-automation-id^="formField"], ' +
-            '.form-group, .field, .application-question'
+            '[data-test-form-element], ' +
+            '.form-group, .field, .application-question, ' +
+            '[class*="form-field"], [class*="formField"]'
         );
 
         const nearby = container?.querySelector("label")?.innerText || "";
         const legend = el.closest("fieldset")
             ?.querySelector("legend")?.innerText || "";
 
-        return (
-            labels ||
-            el.getAttribute("aria-label") ||
-            labelledBy.trim() ||
-            nearby ||
-            legend ||
-            el.getAttribute("placeholder") ||
-            el.name ||
-            el.id ||
-            "Unlabeled field"
-        ).replace(/\s+/g, " ").trim().slice(0, 1000);
+        const containerText = container?.innerText || "";
+        const parentText = el.parentElement?.innerText || "";
+        const previousText = [
+            el.previousElementSibling?.innerText || "",
+            el.parentElement?.previousElementSibling?.innerText || ""
+        ].join(" ");
+
+        const cleanQuestion = value =>
+            (value || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, 1000);
+
+        const generatedId = /^_r_[a-z0-9_]+$/i.test(el.id || "");
+        const surrounding = [
+            containerText,
+            parentText,
+            previousText
+        ]
+            .map(cleanQuestion)
+            .filter(value => value && value.length > 1)
+            .find(value => !/^(yes|no|select|choose|optional)$/i.test(value)) || "";
+
+        const candidates = [
+            labels,
+            el.getAttribute("aria-label") || "",
+            labelledBy.trim(),
+            describedBy.trim(),
+            nearby,
+            legend,
+            surrounding,
+            el.getAttribute("placeholder") || "",
+            el.name || "",
+            generatedId ? "" : (el.id || "")
+        ];
+
+        return candidates
+            .map(cleanQuestion)
+            .find(value => value) || "Unlabeled field";
     };
 
     const nodes = [...scope.querySelectorAll(

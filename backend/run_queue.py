@@ -55,10 +55,9 @@ class RunQueue:
         if self._workers:
             return
         state = self._read_state()
-        now = datetime.now(timezone.utc).timestamp()
         self._items = state.get("items", {})
         for item in self._items.values():
-            if item.get("status") == "running" and float(item.get("lease_until", 0) or 0) <= now:
+            if item.get("status") == "running":
                 item["status"] = "queued"
                 item["lease_until"] = None
                 item["recovered_at"] = datetime.now(timezone.utc).isoformat()

@@ -1,6 +1,6 @@
 import unittest
 
-from backend.application_prepare import classify_field, review_field
+from backend.application_prepare import classify_field, review_field, submission_blockers
 
 
 class ApplicationPreparationTests(unittest.TestCase):
@@ -34,6 +34,16 @@ class ApplicationPreparationTests(unittest.TestCase):
         })
         self.assertTrue(result["review_required"])
         self.assertFalse(result["sensitive"])
+
+    def test_submission_guard_blocks_without_human_approval(self):
+        blockers = submission_blockers([], [], human_approved=False)
+        self.assertIn("Explicit human approval has not been granted.", blockers)
+
+    def test_submission_guard_blocks_missing_required_fields(self):
+        blockers = submission_blockers([
+            {"label": "Phone", "required": True, "filled": False, "kind": "text"},
+        ], [], human_approved=True)
+        self.assertTrue(any("Missing required fields" in item for item in blockers))
 
 
 if __name__ == "__main__":

@@ -188,8 +188,8 @@ class RunManager:
                 "error",
             )
         finally:
-            save_run(run.snapshot())
             run.pending = None
+            save_run(run.snapshot())
             if self.active_by_portal.get(run.request.portal) == run.id:
                 self.active_by_portal.pop(run.request.portal, None)
 

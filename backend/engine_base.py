@@ -1160,8 +1160,6 @@ class Engine:
         finally:
             await detail_page.close()
 
-        self.run.results = candidates
-
     async def discover(self) -> None:
         await self.settle()
         await self.clear_obstacles()

@@ -23,6 +23,7 @@ from backend.application_store import (
 )
 from backend.config import API_TOKEN, MAX_RUN_HISTORY, MAX_UPLOAD_BYTES
 from backend.engine import Engine, Run, start_url, validate_public_url
+from backend.run_store import list_runs as list_persisted_runs, save_run
 from backend.models import (
     ApplicationRecord,
     JobMatchRequest,
@@ -82,7 +83,42 @@ class RunManager:
         run = Run(id=str(uuid.uuid4()), request=request)
         run.application_id = application_id
         self.runs[run.id] = run
+        save_run(run.snapshot())
         return run
+
+    def recover(self) -> list[str]:
+        cancelled = []
+        for snapshot in list_persisted_runs():
+            run_id = snapshot.get("id")
+            if not run_id or run_id in self.runs:
+                continue
+            try:
+                run = Run(id=run_id, request=RunRequest.model_validate(snapshot["request"]))
+            except (KeyError, ValueError):
+                continue
+            run.status = snapshot.get("status", "queued")
+            run.created_at = snapshot.get("created_at", run.created_at)
+            run.application_id = snapshot.get("application_id")
+            run.results = snapshot.get("results", [])
+            run.pending = snapshot.get("pending")
+            for item in snapshot.get("logs", [])[-800:]:
+                run.logs.append(item)
+            self.runs[run.id] = run
+            if run.status == "running":
+                if run.application_id:
+                    try:
+                        application = get_application(run.application_id)
+                        application.status = "submission_uncertain"
+                        record_event(application, "worker_recovery", "Backend restarted while the browser run was active; automatic replay was blocked.")
+                    except (FileNotFoundError, ValueError):
+                        pass
+                    run.status = "failed"
+                    save_run(run.snapshot())
+                    cancelled.append(run.id)
+                else:
+                    run.status = "queued"
+                    save_run(run.snapshot())
+        return cancelled
 
     async def drive_queued(self, run_id: str) -> None:
         run = self.runs.get(run_id)
@@ -102,6 +138,7 @@ class RunManager:
         lock = self.portal_locks.setdefault(run.request.portal, asyncio.Lock())
         async with lock:
             self.active_by_portal[run.request.portal] = run.id
+            save_run(run.snapshot())
             if run.application_id:
                 try:
                     application = get_application(run.application_id)
@@ -118,6 +155,7 @@ class RunManager:
     ) -> None:
         try:
             run.status = "running"
+            save_run(run.snapshot())
             await Engine(run, profile, resume_path).execute()
 
             if run.request.mode == "discover" and run.results:
@@ -150,6 +188,7 @@ class RunManager:
                 "error",
             )
         finally:
+            save_run(run.snapshot())
             run.pending = None
             if self.active_by_portal.get(run.request.portal) == run.id:
                 self.active_by_portal.pop(run.request.portal, None)
@@ -196,7 +235,10 @@ async def lifespan(app: FastAPI):
             "Configure LOCAL_API_TOKEN with at least 24 characters in .env."
         )
     queue.bind(manager.drive_queued)
+    recovered = manager.recover()
     await queue.start()
+    for run_id in recovered:
+        queue.cancel(run_id)
     await scheduler.start()
     yield
     await scheduler.shutdown()
@@ -206,7 +248,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Local Job Application Platform",
-    version="2.1.0",
+    version="2.2.0",
     lifespan=lifespan,
 )
 
@@ -423,7 +465,7 @@ async def create_run(request: RunRequest):
 
     if request.scheduled_at:
         try:
-            await scheduler.schedule(run.id, request.scheduled_at)
+            await scheduler.schedule(run.id, request.scheduled_at, request.priority)
             run.log(f"Run scheduled for {request.scheduled_at}.")
         except (TypeError, ValueError) as exc:
             raise HTTPException(400, f"Invalid scheduled_at: {exc}") from exc
@@ -468,6 +510,9 @@ async def command_run(run_id: str, command: RunCommand):
     if command.action == "stop":
         if run.status == "queued" and (not run.task or run.task.done()):
             run.status = "stopped"
+            queue.cancel(run.id)
+            await scheduler.cancel(run.id)
+            save_run(run.snapshot())
             if run.application_id:
                 try:
                     application = get_application(run.application_id)

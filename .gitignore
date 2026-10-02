@@ -12,3 +12,4 @@ data/resumes/*
 data/runs/
 data/queue_state.json
 data/schedule_state.json
+\ndata/platform.db\ndata/platform.db-shm\ndata/platform.db-wal\n

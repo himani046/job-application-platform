@@ -141,7 +141,6 @@ class RunManager:
                 try:
                     application = get_application(run.application_id)
                     application.status = {
-                        "completed": "submitted",
                         "stopped": "stopped",
                         "expired": "failed",
                         "failed": "failed",
@@ -437,5 +436,13 @@ async def command_run(run_id: str, command: RunCommand):
         raise HTTPException(400, "Enter a non-empty answer.")
 
     pending["claimed"] = True
+    if command.action == "mark_submitted" and run.application_id:
+        try:
+            application = get_application(run.application_id)
+            application.status = "submitted"
+            application.human_approved = True
+            record_event(application, "submitted", "Candidate verified the application receipt and marked it submitted.")
+        except (FileNotFoundError, ValueError):
+            pass
     run.queue.put_nowait(command)
     return {"accepted": True}

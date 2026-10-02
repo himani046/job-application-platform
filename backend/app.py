@@ -95,7 +95,7 @@ class RunManager:
 
     async def drive_queued(self, run_id: str) -> None:
         run = self.runs.get(run_id)
-        if not run:
+        if not run or run.status != "queued":
             return
         profile = None
         resume_path = None

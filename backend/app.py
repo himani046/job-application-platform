@@ -8,6 +8,18 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
+# Playwright launches Chromium through asyncio subprocess APIs. Some Windows
+# hosts (notably when another framework installs a SelectorEventLoop) expose
+# subprocess creation as NotImplementedError. Prefer the Proactor loop on
+# Windows, which supports asyncio subprocesses.
+if hasattr(asyncio, "WindowsProactorEventLoopPolicy"):
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except RuntimeError:
+        # A loop may already be running (for example under an embedded server).
+        # In that case the host's event-loop policy is left untouched.
+        pass
+
 from backend.job_store import get_job, list_jobs, upsert_jobs
 from backend.analytics import summarize_applications
 from backend.run_queue import RunQueue

@@ -1048,6 +1048,108 @@ class Engine:
 
         return errors
 
+    async def enrich_job_results(self) -> None:
+        """Enrich ATS discovery links from their public job-page DOM."""
+        if self.run.request.portal not in {"greenhouse", "lever"}:
+            return
+
+        rules = self.adapter.job_page_rules()
+        if not (
+            rules.title_selectors
+            or rules.company_selectors
+            or rules.location_selectors
+            or rules.description_selectors
+        ):
+            return
+
+        candidates = list(self.run.results)[:25]
+        if not candidates:
+            return
+
+        self.run.log(
+            f"Enriching up to {len(candidates)} {self.run.request.portal.title()} "
+            "job pages with structured metadata."
+        )
+
+        detail_page = await self.context.new_page()
+        try:
+            for index, job in enumerate(candidates, start=1):
+                url = job.get("url", "")
+                if not url or not self.adapter.accepts_url(url):
+                    continue
+
+                try:
+                    await validate_public_url(url)
+                    await detail_page.goto(
+                        url,
+                        wait_until="domcontentloaded",
+                        timeout=30000,
+                    )
+                    await detail_page.wait_for_timeout(400)
+
+                    data = await detail_page.evaluate(
+                        """
+                        rules => {
+                            const clean = value =>
+                                (value || "").replace(/\\s+/g, " ").trim();
+
+                            const read = selectors => {
+                                for (const selector of selectors || []) {
+                                    const nodes = [...document.querySelectorAll(selector)];
+                                    for (const node of nodes) {
+                                        const value = clean(
+                                            node.getAttribute("content") ||
+                                            node.innerText ||
+                                            node.textContent
+                                        );
+                                        if (value) return value;
+                                    }
+                                }
+                                return "";
+                            };
+
+                            return {
+                                title: read(rules.title_selectors),
+                                company: read(rules.company_selectors),
+                                location: read(rules.location_selectors),
+                                description: read(rules.description_selectors),
+                                job_id: read(rules.job_id_selectors),
+                            };
+                        }
+                        """,
+                        {
+                            "title_selectors": list(rules.title_selectors),
+                            "company_selectors": list(rules.company_selectors),
+                            "location_selectors": list(rules.location_selectors),
+                            "description_selectors": list(rules.description_selectors),
+                            "job_id_selectors": list(rules.job_id_selectors),
+                        },
+                    )
+
+                    for key in ("title", "company", "location", "description", "job_id"):
+                        value = (data.get(key) or "").strip()
+                        if value:
+                            job[key] = value[:12000 if key == "description" else 500]
+
+                    job.setdefault("metadata", {})
+                    job["metadata"]["source"] = "portal_job_page"
+                    job["metadata"]["job_id"] = data.get("job_id") or ""
+
+                    self.run.log(
+                        f"Enriched {index}/{len(candidates)}: "
+                        f"{job.get('title') or job.get('url')}"
+                    )
+                except Exception as exc:
+                    self.run.log(
+                        f"Could not enrich {url}: {type(exc).__name__}. "
+                        "Keeping the discovered link.",
+                        "warning",
+                    )
+        finally:
+            await detail_page.close()
+
+        self.run.results = candidates
+
     async def discover(self) -> None:
         await self.settle()
         await self.clear_obstacles()
@@ -1159,6 +1261,8 @@ class Engine:
             if pass_number < 3:
                 await self.page.mouse.wheel(0, 900)
                 await asyncio.sleep(0.7)
+
+        await self.enrich_job_results()
 
         self.run.status = "completed"
 

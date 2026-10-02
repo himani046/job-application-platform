@@ -92,6 +92,8 @@ class RunRequest(StrictModel):
     search_location: str = Field(default="", max_length=200)
     workplace_type: Literal["any", "onsite", "remote", "hybrid"] = "any"
     headless: bool = False
+    priority: int = Field(default=100, ge=1, le=1000)
+    scheduled_at: str | None = None
 
 
 class RunCommand(StrictModel):

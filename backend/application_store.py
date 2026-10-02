@@ -100,3 +100,31 @@ def record_event(record,event_type,message,**metadata):
           (id,application_id,event_type,event_time,message,metadata_json) VALUES (?,?,?,?,?,?)""",
           (event["id"],record.id,event_type,event["time"],message,dumps(metadata)))
     return record
+
+
+def migrate_legacy_applications() -> int:
+    count = 0
+    for path in APPLICATION_DIR.glob("*.json"):
+        try:
+            record = ApplicationRecord.model_validate(json.loads(path.read_text(encoding="utf-8")))
+            with connection() as conn:
+                if conn.execute("SELECT 1 FROM applications WHERE id=?", (record.id,)).fetchone():
+                    continue
+                _upsert(conn, record)
+                for event in record.events:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO application_events
+                           (id,application_id,event_type,event_time,message,metadata_json)
+                           VALUES (?,?,?,?,?,?)""",
+                        (
+                            event.get("id", str(uuid.uuid4())), record.id,
+                            event.get("type", "unknown"), event.get("time", record.updated_at),
+                            event.get("message", ""), dumps(event.get("metadata", {})),
+                        ),
+                    )
+            count += 1
+        except (OSError, ValueError):
+            continue
+    return count
+
+migrate_legacy_applications()

@@ -1582,6 +1582,17 @@ class Engine:
 
         return False
 
+    def sync_application(self, status: str | None = None, event_type: str = "state_changed", message: str = "") -> None:
+        if not self.run.application_id:
+            return
+        try:
+            application = get_application(self.run.application_id)
+            if status:
+                application.status = status
+            record_event(application, event_type, message or f"Application state: {status or application.status}.")
+        except (FileNotFoundError, ValueError):
+            self.run.log("Application lifecycle state could not be persisted.", "warning")
+
     def update_application_review(self, fields: list[dict], errors: list[str] | None = None) -> None:
         """Persist a review snapshot without treating it as submission approval."""
         if not self.run.application_id:
@@ -1887,6 +1898,7 @@ class Engine:
                 return
 
     async def apply(self) -> None:
+        self.sync_application("opening", "opening", "Opening the job page for application preparation.")
         if self.profile is None or self.resume_path is None:
             raise ValueError(
                 "Application mode requires a saved profile and resume."
@@ -1907,9 +1919,11 @@ class Engine:
             self.run.log(
                 f"Inspecting application step {step}."
             )
+            self.sync_application("form_analysis", "form_analysis", "Analyzing the current application form.")
 
             fields = await self.fields()
             self.update_application_review(fields)
+            self.sync_application("filling", "fields_detected", "Application fields detected and classified for review.")
 
             try:
                 if await self.upload_resumes(fields):
@@ -2013,6 +2027,7 @@ class Engine:
                 if item["required"] and not item["filled"] and item["kind"] != "file"
             ]
             if missing_required:
+                self.sync_application("missing_information", "missing_information", "Required application information is missing.")
                 await self.run.pause(
                     "missing_information",
                     "Required application fields are still incomplete. Complete them in the browser, then Resume.",

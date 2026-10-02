@@ -8,6 +8,11 @@ services:
       - .env
     volumes:
       - platform_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   frontend:
@@ -18,7 +23,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     volumes:
       - platform_data:/app/data
     restart: unless-stopped

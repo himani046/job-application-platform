@@ -1,14 +1,15 @@
 import asyncio
-import heapq
 import json
+import heapq
 from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.config import SCHEDULE_STATE_PATH
+from backend.database import connection, init_db
 
 
 class Scheduler:
-    """Persistent scheduler. Scheduled records survive backend restarts."""
+    """SQLite-backed scheduler. Scheduled records survive backend restarts."""
 
     def __init__(self, enqueue, state_path: Path = SCHEDULE_STATE_PATH):
         self.enqueue = enqueue
@@ -17,7 +18,7 @@ class Scheduler:
         self.task = None
         self._sequence = 0
 
-    def _read_state(self) -> list[dict]:
+    def _legacy_state(self) -> list[dict]:
         if not self.state_path.exists():
             return []
         try:
@@ -25,31 +26,55 @@ class Scheduler:
         except (OSError, ValueError):
             return []
 
-    def _persist(self) -> None:
-        payload = [
-            {"run_id": run_id, "scheduled_at": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
-             "priority": priority, "sequence": sequence}
-            for ts, sequence, run_id, priority in self.items
-        ]
-        tmp = self.state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        tmp.replace(self.state_path)
+    def _migrate_legacy_state(self) -> None:
+        with connection() as conn:
+            for item in self._legacy_state():
+                try:
+                    when = datetime.fromisoformat(item["scheduled_at"].replace("Z", "+00:00"))
+                    if when.tzinfo is None:
+                        when = when.replace(tzinfo=timezone.utc)
+                    sequence = int(item.get("sequence", 0))
+                    self._sequence = max(self._sequence, sequence)
+                    conn.execute(
+                        """INSERT INTO scheduled_runs(run_id,scheduled_at,priority,sequence)
+                           VALUES (?,?,?,?) ON CONFLICT(run_id) DO NOTHING""",
+                        (
+                            item["run_id"], when.isoformat(),
+                            int(item.get("priority", 100)), sequence,
+                        ),
+                    )
+                except (KeyError, TypeError, ValueError):
+                    continue
+        if self.state_path.exists():
+            migrated = self.state_path.with_suffix(".migrated.json")
+            try:
+                self.state_path.replace(migrated)
+            except OSError:
+                pass
 
     async def start(self) -> None:
         if self.task:
             return
+        init_db()
+        self._migrate_legacy_state()
+        with connection() as conn:
+            rows = conn.execute(
+                "SELECT run_id,scheduled_at,priority,sequence FROM scheduled_runs "
+                "ORDER BY scheduled_at,sequence"
+            ).fetchall()
         self.items = []
-        for item in self._read_state():
+        for row in rows:
             try:
-                when = datetime.fromisoformat(item["scheduled_at"].replace("Z", "+00:00"))
+                when = datetime.fromisoformat(row["scheduled_at"].replace("Z", "+00:00"))
                 if when.tzinfo is None:
                     when = when.replace(tzinfo=timezone.utc)
-                sequence = int(item.get("sequence", 0))
-                self._sequence = max(self._sequence, sequence)
-                heapq.heappush(self.items, (when.timestamp(), sequence, item["run_id"], int(item.get("priority", 100))))
-            except (KeyError, TypeError, ValueError):
+                self._sequence = max(self._sequence, int(row["sequence"]))
+                heapq.heappush(
+                    self.items,
+                    (when.timestamp(), int(row["sequence"]), row["run_id"], int(row["priority"])),
+                )
+            except (TypeError, ValueError):
                 continue
-        self._persist()
         self.task = asyncio.create_task(self._loop(), name="run-scheduler")
 
     async def schedule(self, run_id: str, scheduled_at: str, priority: int = 100):
@@ -57,17 +82,26 @@ class Scheduler:
         if when.tzinfo is None:
             when = when.replace(tzinfo=timezone.utc)
         self._sequence += 1
+        with connection() as conn:
+            conn.execute(
+                """INSERT INTO scheduled_runs(run_id,scheduled_at,priority,sequence)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(run_id) DO UPDATE SET
+                     scheduled_at=excluded.scheduled_at,
+                     priority=excluded.priority,
+                     sequence=excluded.sequence""",
+                (run_id, when.isoformat(), priority, self._sequence),
+            )
         heapq.heappush(self.items, (when.timestamp(), self._sequence, run_id, priority))
-        self._persist()
 
     async def cancel(self, run_id: str) -> bool:
-        before = len(self.items)
+        with connection() as conn:
+            result = conn.execute(
+                "DELETE FROM scheduled_runs WHERE run_id=?", (run_id,)
+            )
         self.items = [item for item in self.items if item[2] != run_id]
         heapq.heapify(self.items)
-        changed = len(self.items) != before
-        if changed:
-            self._persist()
-        return changed
+        return result.rowcount > 0
 
     async def _loop(self):
         while True:
@@ -80,8 +114,12 @@ class Scheduler:
                 await asyncio.sleep(min(delay, 5))
                 continue
             heapq.heappop(self.items)
-            self._persist()
-            await self.enqueue(run_id, priority)
+            with connection() as conn:
+                result = conn.execute(
+                    "DELETE FROM scheduled_runs WHERE run_id=?", (run_id,)
+                )
+            if result.rowcount:
+                await self.enqueue(run_id, priority)
 
     async def shutdown(self):
         if self.task:
@@ -93,7 +131,11 @@ class Scheduler:
         return {
             "scheduled": len(self.items),
             "items": [
-                {"run_id": run_id, "scheduled_at": datetime.fromtimestamp(ts, timezone.utc).isoformat(), "priority": priority}
+                {
+                    "run_id": run_id,
+                    "scheduled_at": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
+                    "priority": priority,
+                }
                 for ts, _, run_id, priority in sorted(self.items)
             ],
         }

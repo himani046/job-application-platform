@@ -73,15 +73,6 @@ class RunManager:
         resume_path: Path | None,
         application_id: str | None = None,
     ) -> Run:
-        active_id = self.active_by_portal.get(request.portal)
-        if active_id:
-            active = self.runs.get(active_id)
-            if active and active.status in {"queued", "running", "waiting"}:
-                raise HTTPException(
-                    409,
-                    f"Another {request.portal} browser run is active.",
-                )
-
         while len(self.runs) >= MAX_RUN_HISTORY:
             oldest_id = next(iter(self.runs))
             if oldest_id in self.active_by_portal.values():

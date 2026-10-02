@@ -567,6 +567,7 @@ class Engine:
         self.submission_clicked = False
         self.review_snapshot: list[dict] = []
         self.dynamic_form = None
+        self.linkedin_easy_apply_open = False
 
     @property
     def manual_linkedin_discovery(self) -> bool:
@@ -2038,6 +2039,77 @@ class Engine:
                 )
                 return
 
+    async def linkedin_application_scope_ready(self) -> bool:
+        """Return True only when LinkedIn's Easy Apply dialog is actually open."""
+        if self.run.request.portal != "linkedin":
+            return True
+
+        try:
+            dialogs = self.page.locator('[role="dialog"], dialog')
+            count = await dialogs.count()
+
+            for index in range(count):
+                dialog = dialogs.nth(index)
+                if not await dialog.is_visible():
+                    continue
+
+                text = (await dialog.inner_text()).strip()
+                controls = await dialog.locator(
+                    'input:not([type="hidden"]), select, textarea, '
+                    '[role="combobox"], input[type="file"], button'
+                ).count()
+
+                # LinkedIn may render the modal before its controls finish
+                # loading, so the dialog itself is sufficient to establish
+                # application scope.
+                if controls > 0 or text:
+                    return True
+        except Exception:
+            return False
+
+        return False
+
+    async def open_linkedin_easy_apply(self) -> bool:
+        """Open Easy Apply before any application-field inspection."""
+        if self.run.request.portal != "linkedin":
+            return True
+
+        if await self.linkedin_application_scope_ready():
+            self.linkedin_easy_apply_open = True
+            return True
+
+        entry_button = await self.find_button(
+            r"^easy apply$"
+        )
+
+        if not entry_button:
+            # Some LinkedIn layouts expose the label with extra whitespace.
+            entry_button = await self.find_button(
+                r"easy apply"
+            )
+
+        if not entry_button:
+            return False
+
+        self.run.log(
+            f"Clicking Easy Apply entry: {entry_button['text']}"
+        )
+
+        await self.locator(entry_button).click()
+        await self.settle()
+
+        for _ in range(10):
+            if await self.linkedin_application_scope_ready():
+                self.linkedin_easy_apply_open = True
+                self.run.log(
+                    "LinkedIn Easy Apply dialog opened. "
+                    "Application-field inspection is now enabled."
+                )
+                return True
+            await asyncio.sleep(0.4)
+
+        return False
+
     async def apply(self) -> None:
         self.sync_application("opening", "opening", "Opening the job page for application preparation.")
         if self.profile is None or self.resume_path is None:
@@ -2056,6 +2128,32 @@ class Engine:
                     "A confirmation message is displayed on this page."
                 )
                 return
+
+            # LinkedIn's job page contains many unrelated controls.
+            # Never pass them through the application form analyzer. The
+            # Easy Apply dialog must be opened first.
+            if self.run.request.portal == "linkedin" and not self.linkedin_easy_apply_open:
+                opened = await self.open_linkedin_easy_apply()
+
+                if not opened:
+                    await self.run.pause(
+                        "navigation",
+                        (
+                            "LinkedIn Easy Apply has not been opened. "
+                            "Open the Easy Apply form in the headed browser, "
+                            "then Resume."
+                        ),
+                        ["resume"],
+                        url=self.page.url,
+                    )
+                    continue
+
+                continue
+
+            if self.run.request.portal == "linkedin":
+                if not await self.linkedin_application_scope_ready():
+                    self.linkedin_easy_apply_open = False
+                    continue
 
             self.run.log(
                 f"Inspecting application step {step}."
@@ -2232,7 +2330,7 @@ class Engine:
                 await self.confirm_after_submission()
                 return
 
-            entry_button = await self.find_button(
+            entry_button = None if self.run.request.portal == "linkedin" else await self.find_button(
                 r"easy apply|apply|apply now|apply for this job|"
                 r"apply for job|start application|apply manually"
             )

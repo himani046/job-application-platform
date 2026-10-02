@@ -154,22 +154,34 @@ class RunQueue:
 
     async def _worker(self, index: int) -> None:
         while True:
-            item = await self._queue.get()
-            heartbeat = None
+            run_id = None
             try:
-                if await self._claim(item.run_id) and self._handler:
-                    heartbeat = asyncio.create_task(self._heartbeat(item.run_id))
-                    await self._handler(item.run_id)
-                    self.mark_complete(item.run_id)
+                with connection() as conn:
+                    row = conn.execute(
+                        """SELECT run_id FROM queue_items
+                           WHERE status='queued'
+                           ORDER BY priority,sequence LIMIT 1"""
+                    ).fetchone()
+                if row:
+                    run_id = row["run_id"]
+                    if await self._claim(run_id) and self._handler:
+                        heartbeat = asyncio.create_task(self._heartbeat(run_id))
+                        try:
+                            await self._handler(run_id)
+                            self.mark_complete(run_id)
+                        finally:
+                            heartbeat.cancel()
+                            await asyncio.gather(heartbeat, return_exceptions=True)
+                    else:
+                        await asyncio.sleep(0.05)
+                else:
+                    await asyncio.sleep(0.25)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.mark_failed(item.run_id)
-            finally:
-                if heartbeat:
-                    heartbeat.cancel()
-                    await asyncio.gather(heartbeat, return_exceptions=True)
-                self._queue.task_done()
+                if run_id:
+                    self.mark_failed(run_id)
+                await asyncio.sleep(0.25)
 
     def mark_complete(self, run_id: str) -> None:
         with connection() as conn:

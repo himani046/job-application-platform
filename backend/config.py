@@ -21,6 +21,9 @@ JOB_DIR = DATA_DIR / "jobs"
 RUN_DIR = DATA_DIR / "runs"
 QUEUE_STATE_PATH = DATA_DIR / "queue_state.json"
 SCHEDULE_STATE_PATH = DATA_DIR / "schedule_state.json"
+DATABASE_PATH = Path(os.getenv("DATABASE_PATH", str(DATA_DIR / "platform.db"))).expanduser()
+if not DATABASE_PATH.is_absolute():
+    DATABASE_PATH = (ROOT / DATABASE_PATH).resolve()
 
 for directory in (
     DATA_DIR,

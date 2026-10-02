@@ -60,3 +60,15 @@ def review_field(item: dict) -> dict:
         "review_required": review.sensitive or not item.get("filled", False),
         "reason": review.reason,
     }
+
+
+def submission_blockers(fields: list[dict], errors: list[str], human_approved: bool) -> list[str]:
+    blockers = []
+    missing = [item.get("label", "Required field") for item in fields if item.get("required") and not item.get("filled") and item.get("kind") != "file"]
+    if missing:
+        blockers.append("Missing required fields: " + ", ".join(missing))
+    if errors:
+        blockers.append("Visible validation errors remain.")
+    if not human_approved:
+        blockers.append("Explicit human approval has not been granted.")
+    return blockers

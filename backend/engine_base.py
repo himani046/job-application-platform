@@ -2071,7 +2071,7 @@ class Engine:
 
     async def find_linkedin_easy_apply_button(self) -> dict | None:
         """Find LinkedIn's Easy Apply control using a broader, page-specific scan."""
-        pattern = re.compile(r"easy\\s*apply", re.I)
+        pattern = re.compile(r"easy\s*apply", re.I)
 
         for frame in self.page.frames:
             try:

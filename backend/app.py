@@ -554,14 +554,29 @@ async def create_run(request: RunRequest):
                     existing_run = manager.runs.get(existing.run_id)
                     if existing_run and existing_run.status in {"queued", "running", "waiting"}:
                         return existing_run.snapshot()
-                    if existing.status != "queued":
+                    if existing.status in {"queued", "stopped", "failed"}:
+                        # A stopped/failed application is recoverable. Reuse
+                        # the durable application identity and create a fresh
+                        # browser run rather than dead-locking the candidate.
+                        if existing.status in {"stopped", "failed"}:
+                            record_event(
+                                existing,
+                                "requeued",
+                                f"Application requeued after prior run status '{existing.status}'.",
+                            )
+                            existing.status = "queued"
+                        application_id = existing.id
+                        record = existing
+                    else:
                         raise HTTPException(
                             409,
                             f"An existing application is already at '{existing.status}'. "
-                            "Create a new application only after resolving this application state.",
+                            "Only submitted or uncertain submissions remain blocked.",
                         )
-                application_id = existing.id
-                record = existing
+                else:
+                    application_id = existing.id
+                    record = existing
+
             else:
                 application_id = str(uuid.uuid4())
                 now = utc_now()

@@ -58,6 +58,7 @@ class RunManager:
     def __init__(self):
         self.runs: dict[str, Run] = {}
         self.active_by_portal: dict[str, str] = {}
+        self.portal_locks: dict[str, asyncio.Lock] = {}
 
     def get(self, run_id: str) -> Run:
         run = self.runs.get(run_id)
@@ -90,7 +91,6 @@ class RunManager:
         run = Run(id=str(uuid.uuid4()), request=request)
         run.application_id = application_id
         self.runs[run.id] = run
-        self.active_by_portal[request.portal] = run.id
         return run
 
     async def drive_queued(self, run_id: str) -> None:
@@ -108,7 +108,10 @@ class RunManager:
                 run.log(f"Queued run could not load its profile: {exc}", "error")
                 return
         run.task = asyncio.current_task()
-        await self.drive(run, profile, resume_path)
+        lock = self.portal_locks.setdefault(run.request.portal, asyncio.Lock())
+        async with lock:
+            self.active_by_portal[run.request.portal] = run.id
+            await self.drive(run, profile, resume_path)
 
     async def drive(
         self,
@@ -117,11 +120,6 @@ class RunManager:
         resume_path: Path | None,
     ) -> None:
         try:
-            active_id = self.active_by_portal.get(run.request.portal)
-            if active_id and active_id != run.id:
-                await queue.put(run.id, run.request.priority)
-                return
-            self.active_by_portal[run.request.portal] = run.id
             run.status = "running"
             await Engine(run, profile, resume_path).execute()
 

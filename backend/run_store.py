@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 
+from backend.config import RUN_DIR
 from backend.database import connection, init_db
 
 init_db()
@@ -40,3 +41,5 @@ def migrate_legacy_runs(run_dir) -> int:
         except (OSError, ValueError):
             continue
     return count
+
+migrate_legacy_runs(RUN_DIR)

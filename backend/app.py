@@ -111,6 +111,12 @@ class RunManager:
         lock = self.portal_locks.setdefault(run.request.portal, asyncio.Lock())
         async with lock:
             self.active_by_portal[run.request.portal] = run.id
+            if run.application_id:
+                try:
+                    application = get_application(run.application_id)
+                    record_event(application, "run_started", "Browser worker started execution.")
+                except (FileNotFoundError, ValueError):
+                    pass
             await self.drive(run, profile, resume_path)
 
     async def drive(
@@ -437,7 +443,7 @@ async def create_run(request: RunRequest):
     if application_id:
         record = get_application(application_id)
         record.run_id = run.id
-        record_event(record, "run_started", "Browser run started.")
+        record_event(record, "scheduled" if request.scheduled_at else "queued", "Application scheduled." if request.scheduled_at else "Application queued for a worker.")
 
     return run.snapshot()
 

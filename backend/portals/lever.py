@@ -1,9 +1,35 @@
 from backend.portals.ats import ATSAdapter
-from backend.portals.base import PortalCapabilities, PortalFormRules
+from backend.portals.base import JobPageRules, PortalCapabilities, PortalFormRules
 
 
 class LeverAdapter(ATSAdapter):
     """Lever-specific semantics layered over the generic form engine."""
+
+    JOB_PAGE_RULES = JobPageRules(
+        title_selectors=(
+            "h2[data-qa='posting-name']",
+            "h1[data-qa='posting-name']",
+            "h1",
+        ),
+        company_selectors=(
+            ".posting-headline .sort-by-time",
+            "meta[property='og:site_name']",
+        ),
+        location_selectors=(
+            ".posting-categories .location",
+            "[data-qa='posting-location']",
+            ".sort-by-location",
+        ),
+        description_selectors=(
+            ".posting-description",
+            "[data-qa='posting-description']",
+            ".section-wrapper",
+        ),
+        job_id_selectors=(
+            "meta[name='job-id']",
+            "[data-qa='job-id']",
+        ),
+    )
 
     RULES = PortalFormRules(
         field_selectors={
@@ -68,3 +94,6 @@ class LeverAdapter(ATSAdapter):
 
     def form_rules(self) -> PortalFormRules:
         return self.RULES
+
+    def job_page_rules(self) -> JobPageRules:
+        return self.JOB_PAGE_RULES

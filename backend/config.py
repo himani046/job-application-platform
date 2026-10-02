@@ -18,6 +18,9 @@ RESUME_DIR = DATA_DIR / "resumes"
 BROWSER_DIR = DATA_DIR / "browsers"
 APPLICATION_DIR = DATA_DIR / "applications"
 JOB_DIR = DATA_DIR / "jobs"
+RUN_DIR = DATA_DIR / "runs"
+QUEUE_STATE_PATH = DATA_DIR / "queue_state.json"
+SCHEDULE_STATE_PATH = DATA_DIR / "schedule_state.json"
 
 for directory in (
     DATA_DIR,
@@ -26,6 +29,7 @@ for directory in (
     BROWSER_DIR,
     APPLICATION_DIR,
     JOB_DIR,
+    RUN_DIR,
 ):
     directory.mkdir(parents=True, exist_ok=True)
 
@@ -37,3 +41,4 @@ ENABLE_STEALTH = os.getenv("ENABLE_STEALTH", "false").lower() == "true"
 HUMAN_TIMEOUT_SECONDS = int(os.getenv("HUMAN_TIMEOUT_SECONDS", "1800"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "20")) * 1024 * 1024
 MAX_RUN_HISTORY = int(os.getenv("MAX_RUN_HISTORY", "100"))
+WORKER_LEASE_SECONDS = int(os.getenv("WORKER_LEASE_SECONDS", "300"))

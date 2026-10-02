@@ -31,6 +31,7 @@ from backend.portals import get_adapter
 from backend.application_prepare import review_field, submission_blockers
 from backend.application_store import get_application, record_event
 from backend.universal_form import answer_from_profile, build_field_spec
+from backend.dynamic_form import DynamicFormExecutor
 
 FORM_SCRIPT = r"""
 () => {
@@ -521,6 +522,7 @@ class Engine:
         self.resume_path = resume_path
         self.adapter = get_adapter(run.request.portal, run.request)
         self.form_rules = self.adapter.form_rules()
+        self.dynamic_form = DynamicFormExecutor(run=run.page if False else None) if False else None
 
         self.context: BrowserContext | None = None
         self.page: Page | None = None
@@ -531,6 +533,7 @@ class Engine:
 
         self.submission_clicked = False
         self.review_snapshot: list[dict] = []
+        self.dynamic_form = None
 
     @property
     def manual_linkedin_discovery(self) -> bool:
@@ -602,6 +605,7 @@ class Engine:
                         await old_page.close()
 
                 self.run.status = "running"
+                self.dynamic_form = DynamicFormExecutor(self.page, self.run.log)
 
                 if self.manual_linkedin_discovery:
                     self.run.log(
@@ -1505,6 +1509,12 @@ class Engine:
     async def fill(self, item: dict, answer: str) -> bool:
         locator = self.locator(item)
         kind = item["kind"]
+
+        # Prefer resilient user-facing locators when the DOM has changed.
+        if self.dynamic_form:
+            resolved, _strategy = await self.dynamic_form.resolve(item)
+            if resolved is not None:
+                locator = resolved
 
         if kind == "select":
             option = self.choose_option(answer, item["options"])

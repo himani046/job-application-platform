@@ -1642,6 +1642,9 @@ class Engine:
                 review_required=True,
             )
             if command.action == "resume":
+                if item["filled"]:
+                    self.handled.add(key)
+                    self.run.log(f"Candidate reviewed existing sensitive field: {item['label']}")
                 return True
             if command.action == "skip":
                 self.handled.add(key)

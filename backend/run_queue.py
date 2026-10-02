@@ -102,11 +102,23 @@ class RunQueue:
         self._persist()
         return True
 
+    async def _heartbeat(self, run_id: str) -> None:
+        interval = max(10, self.lease_seconds // 3)
+        while True:
+            await asyncio.sleep(interval)
+            item = self._items.get(run_id)
+            if not item or item.get("status") != "running":
+                return
+            item["lease_until"] = datetime.now(timezone.utc).timestamp() + self.lease_seconds
+            self._persist()
+
     async def _worker(self, index: int) -> None:
         while True:
             item = await self._queue.get()
+            heartbeat = None
             try:
                 if await self._claim(item.run_id) and self._handler:
+                    heartbeat = asyncio.create_task(self._heartbeat(item.run_id))
                     await self._handler(item.run_id)
                     self.mark_complete(item.run_id)
             except asyncio.CancelledError:
@@ -114,6 +126,9 @@ class RunQueue:
             except Exception:
                 self.mark_failed(item.run_id)
             finally:
+                if heartbeat:
+                    heartbeat.cancel()
+                    await asyncio.gather(heartbeat, return_exceptions=True)
                 self._queue.task_done()
 
     def mark_complete(self, run_id: str) -> None:

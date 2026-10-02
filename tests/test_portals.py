@@ -66,6 +66,20 @@ class PortalAdapterTests(unittest.TestCase):
         adapter = get_adapter("workday")
         self.assertEqual(adapter.form_rules().field_selectors, {})
 
+    def test_greenhouse_job_page_rules(self):
+        rules = get_adapter("greenhouse").job_page_rules()
+
+        self.assertIn("h1", rules.title_selectors)
+        self.assertIn(".location", rules.location_selectors)
+        self.assertIn(".job__description", rules.description_selectors)
+
+    def test_lever_job_page_rules(self):
+        rules = get_adapter("lever").job_page_rules()
+
+        self.assertIn("h1", rules.title_selectors)
+        self.assertIn(".posting-categories .location", rules.location_selectors)
+        self.assertIn(".posting-description", rules.description_selectors)
+
 
 if __name__ == "__main__":
     unittest.main()

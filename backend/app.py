@@ -18,6 +18,7 @@ from backend.application_store import (
     create_application,
     get_application,
     list_applications,
+    find_application,
     record_event,
     update_application,
 )
@@ -449,20 +450,42 @@ async def create_run(request: RunRequest):
         raise HTTPException(400, str(exc)) from exc
 
     if request.mode == "apply":
-        application_id = str(uuid.uuid4())
-        now = utc_now()
-        record = ApplicationRecord(
-            id=application_id,
-            profile_id=request.profile_id,
-            job_id=job_fingerprint(request.job_url or "", ""),
-            job_url=request.job_url or "",
-            portal=request.portal,
-            status="queued",
-            created_at=now,
-            updated_at=now,
-        )
-        create_application(record)
-        record_event(record, "queued", "Application queued for browser execution.")
+        job_id = job_fingerprint(request.job_url or "", "")
+        existing = find_application(request.profile_id or "", request.portal, job_id)
+        if existing:
+            if existing.status in {"submitted", "submission_uncertain"}:
+                raise HTTPException(
+                    409,
+                    f"An application for this profile and job already exists with status '{existing.status}'. "
+                    "Automatic replay is blocked; verify the existing application first.",
+                )
+            if existing.run_id:
+                existing_run = manager.runs.get(existing.run_id)
+                if existing_run and existing_run.status in {"queued", "running", "waiting"}:
+                    return existing_run.snapshot()
+                if existing.status != "queued":
+                    raise HTTPException(
+                        409,
+                        f"An existing application is already at '{existing.status}'. "
+                        "Create a new application only after resolving this application state.",
+                    )
+            application_id = existing.id
+            record = existing
+        else:
+            application_id = str(uuid.uuid4())
+            now = utc_now()
+            record = ApplicationRecord(
+                id=application_id,
+                profile_id=request.profile_id,
+                job_id=job_id,
+                job_url=request.job_url or "",
+                portal=request.portal,
+                status="queued",
+                created_at=now,
+                updated_at=now,
+            )
+            record = create_application(record)
+            record_event(record, "queued", "Application queued for browser execution.")
 
     run = manager.start(
         request,

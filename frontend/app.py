@@ -901,3 +901,40 @@ with automation_tab:
                         st.info("No saved jobs available for matching.")
                 except RuntimeError as exc:
                     st.warning(f"Matching unavailable: {exc}")
+
+            st.markdown("#### Application intelligence")
+            st.caption(
+                "Inspect the requirements and profile facts before preparing an application. "
+                "The planner never invents qualifications or legal answers."
+            )
+            try:
+                saved_jobs = api("GET", "/jobs")
+                if saved_jobs:
+                    job_lookup = {
+                        f"{job.get('title') or 'Untitled'} — {job.get('company') or 'Unknown'} — {job['id'][:8]}": job
+                        for job in saved_jobs
+                    }
+                    chosen_label = st.selectbox(
+                        "Job to analyze",
+                        options=list(job_lookup),
+                        key="planner-job",
+                    )
+                    chosen_job = job_lookup[chosen_label]
+                    if st.button("Analyze application readiness", key="planner-analyze"):
+                        plan = api(
+                            "GET",
+                            f"/jobs/{chosen_job['id']}/application-plan",
+                            params={"profile_id": selected_profile},
+                        )
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Matched skills", len(plan["matched_skills"]))
+                        c2.metric("Missing skills", len(plan["missing_skills"]))
+                        c3.metric(
+                            "Experience requirement",
+                            "Satisfied" if plan["experience_requirement_satisfied"] else "Review",
+                        )
+                        st.write("**Matched:**", ", ".join(plan["matched_skills"]) or "None detected")
+                        st.write("**Missing:**", ", ".join(plan["missing_skills"]) or "None detected")
+                        st.info("\n".join(plan["planning_notes"]))
+            except RuntimeError as exc:
+                st.warning(f"Application intelligence unavailable: {exc}")

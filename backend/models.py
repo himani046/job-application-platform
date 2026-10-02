@@ -140,3 +140,8 @@ class ApplicationRecord(StrictModel):
     created_at: str
     updated_at: str
     events: list[dict] = Field(default_factory=list)
+    review_fields: list[dict] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
+    sensitive_fields: list[str] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+    human_approved: bool = False

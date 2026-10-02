@@ -107,12 +107,50 @@ def create_application(record):
             record.profile_id, record.portal, record.job_id
         )
     with connection() as conn:
-        if conn.execute(
-            "SELECT 1 FROM applications WHERE id=?", (record.id,)
-        ).fetchone():
-            raise ValueError("Application already exists.")
-        _upsert(conn, record)
-    return record
+        _upsert_ignore_identity(conn, record)
+        row = conn.execute(
+            "SELECT * FROM applications WHERE application_key=?",
+            (record.application_key,),
+        ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT * FROM applications WHERE id=?", (record.id,)
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Application could not be persisted.")
+        return _row(row, _events(conn, row["id"]))
+
+
+def _upsert_ignore_identity(conn, r):
+    conn.execute(
+        """INSERT INTO applications
+          (id,profile_id,job_id,job_url,portal,title,company,status,resume_version,run_id,confirmation_text,
+           application_key,created_at,updated_at,review_fields_json,missing_fields_json,sensitive_fields_json,
+           validation_errors_json,human_approved)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          ON CONFLICT(application_key) DO NOTHING""",
+        (
+            r.id,
+            r.profile_id,
+            r.job_id,
+            r.job_url,
+            r.portal,
+            r.title,
+            r.company,
+            r.status,
+            r.resume_version,
+            r.run_id,
+            r.confirmation_text,
+            r.application_key,
+            r.created_at,
+            r.updated_at,
+            dumps(r.review_fields),
+            dumps(r.missing_fields),
+            dumps(r.sensitive_fields),
+            dumps(r.validation_errors),
+            int(r.human_approved),
+        ),
+    )
 
 
 def find_application(profile_id: str, portal: str, job_id: str):

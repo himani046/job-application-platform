@@ -141,14 +141,19 @@ class Scheduler:
             self.task = None
 
     def snapshot(self):
+        with connection() as conn:
+            rows = conn.execute(
+                "SELECT run_id,scheduled_at,priority FROM scheduled_runs "
+                "ORDER BY scheduled_at,sequence"
+            ).fetchall()
         return {
-            "scheduled": len(self.items),
+            "scheduled": len(rows),
             "items": [
                 {
-                    "run_id": run_id,
-                    "scheduled_at": datetime.fromtimestamp(ts, timezone.utc).isoformat(),
-                    "priority": priority,
+                    "run_id": row["run_id"],
+                    "scheduled_at": row["scheduled_at"],
+                    "priority": int(row["priority"]),
                 }
-                for ts, _, run_id, priority in sorted(self.items)
+                for row in rows
             ],
         }

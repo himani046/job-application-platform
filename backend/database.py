@@ -32,6 +32,29 @@ CREATE TABLE IF NOT EXISTS runs (
     snapshot_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at DESC);
+CREATE TABLE IF NOT EXISTS queue_items (
+    run_id TEXT PRIMARY KEY,
+    priority INTEGER NOT NULL,
+    sequence INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    worker_id TEXT,
+    lease_until REAL,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    completed_at TEXT,
+    failed_at TEXT,
+    recovered_at TEXT,
+    cancelled_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_queue_status_priority ON queue_items(status, priority, sequence);
+CREATE TABLE IF NOT EXISTS scheduled_runs (
+    run_id TEXT PRIMARY KEY,
+    scheduled_at TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 100,
+    sequence INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_at ON scheduled_runs(scheduled_at, sequence);
+
 CREATE TABLE IF NOT EXISTS application_events (
     id TEXT PRIMARY KEY,
     application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,

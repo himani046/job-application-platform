@@ -1574,6 +1574,14 @@ class Engine:
             await self.page.keyboard.press("Escape")
             return False
 
+        if kind == "date":
+            try:
+                await locator.fill(answer)
+                await locator.press("Tab")
+                return True
+            except Exception:
+                return False
+
         if kind == "text":
             max_length = await locator.get_attribute("maxlength")
 
@@ -1836,9 +1844,12 @@ class Engine:
                 and looks_document_compatible
                 and (resume_field or len(files) == 1)
             ):
-                await self.locator(item).set_input_files(
-                    str(self.resume_path)
-                )
+                upload_locator = self.locator(item)
+                if self.dynamic_form:
+                    resolved, _strategy = await self.dynamic_form.resolve(item)
+                    if resolved is not None:
+                        upload_locator = resolved
+                await upload_locator.set_input_files(str(self.resume_path))
 
                 self.handled.add(key)
 

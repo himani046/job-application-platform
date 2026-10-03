@@ -517,10 +517,19 @@ async def resolve_uncertain_application(
     if application.run_id:
         run = manager.runs.get(application.run_id)
         if run and run.status in {"queued", "running", "waiting"}:
-            raise HTTPException(
-                409,
-                "The browser run is still active. Stop it before resolving the application.",
-            )
+            if request.action == "cancelled":
+                if run.status == "queued" and (not run.task or run.task.done()):
+                    run.status = "stopped"
+                    queue.cancel(run.id)
+                    await scheduler.cancel(run.id)
+                    save_run(run.snapshot())
+                elif run.task and not run.task.done():
+                    run.task.cancel()
+            else:
+                raise HTTPException(
+                    409,
+                    "The browser run is still active. Stop it before resolving the application.",
+                )
 
     if request.action == "submitted":
         application.status = "submitted"
@@ -531,6 +540,18 @@ async def resolve_uncertain_application(
             application,
             "uncertain_resolved_submitted",
             "Candidate explicitly verified the application as submitted; automatic replay remains blocked.",
+        )
+        return application.model_dump(mode="json")
+
+    if request.action == "cancelled":
+        application.status = "stopped"
+        application.run_id = None
+        application.human_approved = False
+        application.confirmation_text = None
+        record_event(
+            application,
+            "cancelled",
+            "Candidate cancelled this application and chose not to replay it automatically.",
         )
         return application.model_dump(mode="json")
 

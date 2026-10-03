@@ -1109,6 +1109,75 @@ class Engine:
 
         for frame in self.page.frames:
             try:
+                # Prefer Playwright's user-facing accessible-name locators.
+                # They also pierce open shadow DOM, which is useful when the
+                # LinkedIn sticky footer is rendered outside the form subtree.
+                for role_name in ("Next", "Continue", "Review application", "Save and continue"):
+                    try:
+                        controls = frame.get_by_role(
+                            "button",
+                            name=role_name,
+                            exact=True,
+                        )
+                        for index in range(await controls.count()):
+                            candidate = controls.nth(index)
+                            if not await candidate.is_visible():
+                                continue
+                            if await candidate.get_attribute("aria-disabled") == "true":
+                                continue
+                            if await candidate.is_disabled():
+                                continue
+                            key = await candidate.get_attribute("data-job-agent-id")
+                            if not key:
+                                key = str(uuid.uuid4())
+                                await candidate.set_attribute("data-job-agent-id", key)
+                            return {
+                                "key": key,
+                                "text": role_name,
+                                "frame": frame,
+                            }
+                    except Exception:
+                        continue
+
+                # Also support links/controls whose accessible role is not
+                # exposed as button but whose visible text is Next/Continue.
+                direct_text = frame.get_by_text(
+                    re.compile(
+                        r"^\s*(?:Next|Continue|Review application|Save and continue)\s*$",
+                        re.I,
+                    )
+                )
+                for index in range(await direct_text.count()):
+                    node = direct_text.nth(index)
+                    if not await node.is_visible():
+                        continue
+
+                    for selector in [
+                        "button",
+                        '[role="button"]',
+                        'a',
+                    ]:
+                        try:
+                            parent = node.locator(f"xpath=ancestor::{selector}[1]")
+                            if await parent.count() != 1 or not await parent.is_visible():
+                                continue
+                            if await parent.get_attribute("aria-disabled") == "true":
+                                continue
+                            if await parent.is_disabled():
+                                continue
+                            text = (await parent.inner_text()).strip() or "Next"
+                            key = await parent.get_attribute("data-job-agent-id")
+                            if not key:
+                                key = str(uuid.uuid4())
+                                await parent.set_attribute("data-job-agent-id", key)
+                            return {
+                                "key": key,
+                                "text": text,
+                                "frame": frame,
+                            }
+                        except Exception:
+                            continue
+
                 # Search broadly because LinkedIn can render the sticky footer
                 # outside the dialog/form subtree used by FORM_SCRIPT.
                 candidates = await frame.locator(
@@ -2554,7 +2623,21 @@ class Engine:
                     )
                     continue
 
-            submit_button = await self.find_button(self.button_pattern("submit", r"submit|submit application|send application|complete application|finish|finish application|submit my application|apply|apply now"))
+            submit_pattern = self.button_pattern(
+                "submit",
+                r"submit|submit application|send application|"
+                r"complete application|finish|finish application|"
+                r"submit my application|apply|apply now",
+            )
+            submit_button = await self.find_button(submit_pattern)
+
+            # On LinkedIn the job-page "Easy Apply" control can remain in the
+            # DOM behind the application dialog. It is an entry action, not a
+            # final submission action, and must never trigger approval here.
+            if self.run.request.portal == "linkedin" and submit_button:
+                submit_text = compact(submit_button.get("text", ""))
+                if re.search(r"^easy\s*apply(?:\s+to\s+this\s+job)?$", submit_text, re.I):
+                    submit_button = None
 
             if submit_button and fields:
                 self.sync_application("awaiting_approval", "review_requested", "Application is ready for final human approval.")

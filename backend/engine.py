@@ -422,6 +422,53 @@ class Engine(BaseEngine):
         workplace = request.workplace_type
 
         if request.portal == "linkedin":
+            # "any" is intentionally not a LinkedIn workplace filter. It
+            # means the search should include onsite, hybrid, and remote
+            # listings without requiring a workplace-specific selection.
+            # Do not stop a discovery run just to ask the user to confirm
+            # a filter that was never requested.
+            if workplace == "any":
+                await self.settle()
+                await validate_public_url(self.page.url)
+
+                if not is_linkedin_url(self.page.url):
+                    self.run.log(
+                        "LinkedIn discovery is no longer on a LinkedIn page.",
+                        "warning",
+                    )
+                    return
+
+                if is_linkedin_auth_page(self.page.url):
+                    self.run.log(
+                        "LinkedIn authentication is required before discovery.",
+                        "warning",
+                    )
+                    await self.wait_for_manual_search_page(start_url(request))
+                    return
+
+                if await self.challenge_present():
+                    self.run.log(
+                        "An access challenge is present. Resolve it manually "
+                        "or stop the run.",
+                        "warning",
+                    )
+                    await self.run.pause(
+                        "challenge",
+                        (
+                            "Resolve the LinkedIn access challenge manually, "
+                            "then click Resume, or stop the run."
+                        ),
+                        ["resume"],
+                    )
+                    return
+
+                self.run.log(
+                    f"LinkedIn discovery filters accepted automatically: "
+                    f"location={location or 'not specified'}; "
+                    "workplace=any (no workplace restriction)."
+                )
+                return
+
             instructions = (
                 f"The search URL requests location '{location}' and "
                 f"workplace type '{workplace}'. Verify the visible LinkedIn "

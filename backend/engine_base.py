@@ -1097,234 +1097,55 @@ class Engine:
         return None
 
     async def find_linkedin_next_button(self) -> dict | None:
-        """Find LinkedIn Easy Apply navigation even when the footer is outside the form scope."""
+        """Find the visible Next/Continue control inside LinkedIn's Easy Apply dialog."""
         if self.run.request.portal != "linkedin":
             return None
 
-        pattern = re.compile(
-            r"^(?:next|continue|review(?: application)?|save and continue)"
-            r"(?:\s*[:\-].*)?$",
-            re.I,
+        # Search the actual top-level document first. LinkedIn's current Easy
+        # Apply DOM uses a native <dialog> with a footer button. This is more
+        # reliable than scanning every frame or the job-page DOM.
+        selectors = (
+            "dialog:visible footer button",
+            "dialog:visible button",
+            '[role="dialog"]:visible footer button',
+            '[role="dialog"]:visible button',
         )
 
-        for frame in self.page.frames:
+        for selector in selectors:
             try:
-                # Prefer Playwright's user-facing accessible-name locators.
-                # They also pierce open shadow DOM, which is useful when the
-                # LinkedIn sticky footer is rendered outside the form subtree.
-                for role_name in ("Next", "Continue", "Review application", "Save and continue"):
-                    try:
-                        controls = frame.get_by_role(
-                            "button",
-                            name=role_name,
-                            exact=True,
-                        )
-                        for index in range(await controls.count()):
-                            candidate = controls.nth(index)
-                            if not await candidate.is_visible():
-                                continue
-                            if await candidate.get_attribute("aria-disabled") == "true":
-                                continue
-                            if await candidate.is_disabled():
-                                continue
-                            key = await candidate.get_attribute("data-job-agent-id")
-                            if not key:
-                                key = str(uuid.uuid4())
-                                await candidate.set_attribute("data-job-agent-id", key)
-                            return {
-                                "key": key,
-                                "text": role_name,
-                                "frame": frame,
-                            }
-                    except Exception:
-                        continue
-
-                # Also support links/controls whose accessible role is not
-                # exposed as button but whose visible text is Next/Continue.
-                direct_text = frame.get_by_text(
-                    re.compile(
-                        r"^\s*(?:Next|Continue|Review application|Save and continue)\s*$",
-                        re.I,
-                    )
+                controls = self.page.locator(selector)
+                count = await controls.count()
+                self.run.log(
+                    f"LinkedIn Next search: {selector} -> {count} visible candidates."
                 )
-                for index in range(await direct_text.count()):
-                    node = direct_text.nth(index)
-                    if not await node.is_visible():
-                        continue
 
-                    for selector in [
-                        "button",
-                        '[role="button"]',
-                        'a',
-                    ]:
-                        try:
-                            parent = node.locator(f"xpath=ancestor::{selector}[1]")
-                            if await parent.count() != 1 or not await parent.is_visible():
-                                continue
-                            if await parent.get_attribute("aria-disabled") == "true":
-                                continue
-                            if await parent.is_disabled():
-                                continue
-                            text = (await parent.inner_text()).strip() or "Next"
-                            key = await parent.get_attribute("data-job-agent-id")
-                            if not key:
-                                key = str(uuid.uuid4())
-                                await parent.set_attribute("data-job-agent-id", key)
-                            return {
-                                "key": key,
-                                "text": text,
-                                "frame": frame,
-                            }
-                        except Exception:
-                            continue
-
-                # LinkedIn's current Easy Apply DOM renders navigation as:
-                # <dialog> ... <div> ... <footer><button><span>Next</span>
-                # Target that structure directly before generic button discovery.
-                for selector in [
-                    'dialog footer button',
-                    '[role="dialog"] footer button',
-                    'dialog button',
-                ]:
-                    try:
-                        controls = frame.locator(selector)
-                        count = await controls.count()
-                        for index in range(count):
-                            candidate = controls.nth(index)
-                            if not await candidate.is_visible():
-                                continue
-                            if await candidate.get_attribute("aria-disabled") == "true":
-                                continue
-                            if await candidate.is_disabled():
-                                continue
-
-                            text = (await candidate.inner_text()).strip()
-                            text = re.sub(r"\\s+", " ", text).strip()
-
-                            if not re.fullmatch(
-                                r"(?:Next|Continue|Review application|Save and continue)",
-                                text,
-                                re.I,
-                            ):
-                                continue
-
-                            key = await candidate.get_attribute("data-job-agent-id")
-                            if not key:
-                                key = str(uuid.uuid4())
-                                await candidate.set_attribute("data-job-agent-id", key)
-
-                            self.run.log(
-                                f"LinkedIn dialog footer navigation found: {text}"
-                            )
-                            return {
-                                "key": key,
-                                "text": text,
-                                "frame": frame,
-                            }
-                    except Exception as exc:
-                        self.run.log(
-                            f"LinkedIn dialog navigation selector failed: {type(exc).__name__}",
-                            "warning",
-                        )
-
-                # Last-resort CSS text matching for LinkedIn's sticky footer.
-                # This is intentionally limited to visible controls with exact
-                # navigation text so the underlying Easy Apply entry button
-                # cannot be mistaken for a navigation action.
-                for selector in [
-                    'button:has-text("Next")',
-                    '[role="button"]:has-text("Next")',
-                    'button:has-text("Continue")',
-                    '[role="button"]:has-text("Continue")',
-                    'input[type="submit"][value="Next"]',
-                    'input[type="button"][value="Next"]',
-                ]:
-                    try:
-                        controls = frame.locator(selector)
-                        for index in range(await controls.count()):
-                            candidate = controls.nth(index)
-                            if not await candidate.is_visible():
-                                continue
-                            if await candidate.get_attribute("aria-disabled") == "true":
-                                continue
-                            if await candidate.is_disabled():
-                                continue
-
-                            text = " ".join(
-                                value
-                                for value in [
-                                    await candidate.inner_text(),
-                                    await candidate.get_attribute("aria-label"),
-                                    await candidate.get_attribute("title"),
-                                    await candidate.get_attribute("value"),
-                                ]
-                                if value
-                            )
-                            text = re.sub(r"\s+", " ", text).strip()
-
-                            if not re.fullmatch(
-                                r"(?:Next|Continue|Review application|Save and continue)",
-                                text,
-                                re.I,
-                            ):
-                                continue
-
-                            key = await candidate.get_attribute("data-job-agent-id")
-                            if not key:
-                                key = str(uuid.uuid4())
-                                await candidate.set_attribute("data-job-agent-id", key)
-
-                            self.run.log(
-                                f"LinkedIn navigation control found via CSS fallback: {text}"
-                            )
-                            return {
-                                "key": key,
-                                "text": text,
-                                "frame": frame,
-                            }
-                    except Exception:
-                        continue
-
-                # Search broadly because LinkedIn can render the sticky footer
-                # outside the dialog/form subtree used by FORM_SCRIPT.
-                candidates = await frame.locator(
-                    'button, [role="button"], input[type="submit"], '
-                    'a, [data-control-name*="continue" i], '
-                    '[data-control-name*="next" i]'
-                ).all()
-
-                for candidate in candidates:
+                for index in range(count):
+                    candidate = controls.nth(index)
                     if not await candidate.is_visible():
                         continue
 
-                    text = " ".join(
-                        value
-                        for value in [
-                            await candidate.inner_text(),
-                            await candidate.get_attribute("aria-label"),
-                            await candidate.get_attribute("title"),
-                            await candidate.get_attribute("value"),
-                            await candidate.get_attribute("data-control-name"),
-                        ]
-                        if value
+                    state = await candidate.evaluate(
+                        """el => ({
+                            text: (el.innerText || el.textContent || '').trim(),
+                            ariaDisabled: el.getAttribute('aria-disabled'),
+                            disabled: !!el.disabled
+                        })"""
                     )
-                    text = re.sub(r"\s+", " ", text).strip()
 
-                    if not pattern.search(text):
-                        continue
+                    text = re.sub(r"\s+", " ", state["text"]).strip()
 
-                    if await candidate.get_attribute("aria-disabled") == "true":
+                    if state["ariaDisabled"] == "true" or state["disabled"]:
                         self.run.log(
-                            f"LinkedIn navigation '{text}' is currently disabled.",
+                            f"LinkedIn navigation candidate is disabled: {text or '<unnamed>'}",
                             "warning",
                         )
                         continue
 
-                    if await candidate.is_disabled():
-                        self.run.log(
-                            f"LinkedIn navigation '{text}' is currently disabled.",
-                            "warning",
-                        )
+                    if not re.fullmatch(
+                        r"(?:Next|Continue|Review application|Save and continue)",
+                        text,
+                        re.I,
+                    ):
                         continue
 
                     key = await candidate.get_attribute("data-job-agent-id")
@@ -1332,48 +1153,21 @@ class Engine:
                         key = str(uuid.uuid4())
                         await candidate.set_attribute("data-job-agent-id", key)
 
+                    self.run.log(
+                        f"LinkedIn Next button FOUND in dialog: {text}"
+                    )
                     return {
                         "key": key,
                         "text": text,
-                        "frame": frame,
+                        "frame": self.page.main_frame,
                     }
 
-                # Last-resort text lookup for controls whose clickable
-                # container is not itself a semantic button.
-                text_nodes = frame.get_by_text(
-                    re.compile(r"^\s*(?:Next|Continue)\s*$", re.I)
+            except Exception as exc:
+                self.run.log(
+                    f"LinkedIn Next search failed for {selector}: "
+                    f"{type(exc).__name__}: {exc}",
+                    "warning",
                 )
-
-                for index in range(await text_nodes.count()):
-                    node = text_nodes.nth(index)
-                    if not await node.is_visible():
-                        continue
-
-                    for selector in [
-                        "button",
-                        '[role="button"]',
-                        'a',
-                    ]:
-                        parent = node.locator(f"xpath=ancestor::{selector}[1]")
-                        if await parent.count() == 1 and await parent.is_visible():
-                            text = (await parent.inner_text()).strip()
-                            if await parent.get_attribute("aria-disabled") == "true":
-                                continue
-
-                            key = await parent.get_attribute("data-job-agent-id")
-                            if not key:
-                                key = str(uuid.uuid4())
-                                await parent.set_attribute(
-                                    "data-job-agent-id", key
-                                )
-
-                            return {
-                                "key": key,
-                                "text": text or "Next",
-                                "frame": frame,
-                            }
-            except Exception:
-                continue
 
         return None
 
@@ -2734,21 +2528,63 @@ class Engine:
                     )
                     continue
 
-            submit_pattern = self.button_pattern(
-                "submit",
-                r"submit|submit application|send application|"
-                r"complete application|finish|finish application|"
-                r"submit my application|apply|apply now",
-            )
-            submit_button = await self.find_button(submit_pattern)
-
-            # On LinkedIn the job-page "Easy Apply" control can remain in the
-            # DOM behind the application dialog. It is an entry action, not a
-            # final submission action, and must never trigger approval here.
-            if self.run.request.portal == "linkedin" and submit_button:
-                submit_text = compact(submit_button.get("text", ""))
-                if re.search(r"^easy\s*apply(?:\s+to\s+this\s+job)?$", submit_text, re.I):
-                    submit_button = None
+            if self.run.request.portal == "linkedin":
+                # Never search the whole job page for a submit/apply button.
+                # The underlying "Easy Apply" entry button can remain mounted
+                # behind the dialog and is NOT a submission control.
+                submit_button = None
+                dialog_submit = self.page.locator(
+                    "dialog:visible footer button, "
+                    '[role="dialog"]:visible footer button'
+                )
+                for index in range(await dialog_submit.count()):
+                    candidate = dialog_submit.nth(index)
+                    if not await candidate.is_visible():
+                        continue
+                    state = await candidate.evaluate(
+                        """el => ({
+                            text: (el.innerText || el.textContent || '').trim(),
+                            ariaDisabled: el.getAttribute('aria-disabled'),
+                            disabled: !!el.disabled
+                        })"""
+                    )
+                    submit_text = re.sub(r"\s+", " ", state["text"]).strip()
+                    if (
+                        state["ariaDisabled"] == "true"
+                        or state["disabled"]
+                        or re.fullmatch(
+                            r"(?:Next|Continue|Review application|Save and continue)",
+                            submit_text,
+                            re.I,
+                        )
+                    ):
+                        continue
+                    if re.search(
+                        r"^(?:Submit|Submit application|Send application|"
+                        r"Complete application|Finish|Finish application|"
+                        r"Submit my application)$",
+                        submit_text,
+                        re.I,
+                    ):
+                        key = await candidate.get_attribute("data-job-agent-id")
+                        if not key:
+                            key = str(uuid.uuid4())
+                            await candidate.set_attribute("data-job-agent-id", key)
+                        submit_button = {
+                            "key": key,
+                            "text": submit_text,
+                            "frame": self.page.main_frame,
+                        }
+                        break
+            else:
+                submit_button = await self.find_button(
+                    self.button_pattern(
+                        "submit",
+                        r"submit|submit application|send application|"
+                        r"complete application|finish|finish application|"
+                        r"submit my application|apply|apply now",
+                    )
+                )
 
             if submit_button and fields:
                 self.sync_application("awaiting_approval", "review_requested", "Application is ready for final human approval.")

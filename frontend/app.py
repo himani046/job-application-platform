@@ -846,6 +846,51 @@ with automation_tab:
                     st.error("Validation errors: " + " | ".join(selected_application["validation_errors"]))
                 if selected_application.get("human_approved"):
                     st.success("Human approval recorded for the final submission action.")
+
+                if selected_application.get("status") == "submission_uncertain":
+                    st.warning(
+                        "This application needs your decision. Verify LinkedIn before choosing an action."
+                    )
+
+                    action_col1, action_col2 = st.columns(2)
+
+                    with action_col1:
+                        if st.button(
+                            "✅ Applied",
+                            key=f"mark-applied-{selected_application['id']}",
+                            type="primary",
+                        ):
+                            try:
+                                api(
+                                    "POST",
+                                    f"/applications/{selected_application['id']}/resolve",
+                                    json={
+                                        "action": "submitted",
+                                        "confirmation_text": "Marked Applied from Application History after candidate verification.",
+                                    },
+                                )
+                                st.success("Application marked as Applied.")
+                                st.rerun()
+                            except RuntimeError as exc:
+                                st.error(str(exc))
+
+                    with action_col2:
+                        if st.button(
+                            "❌ Cancel application",
+                            key=f"cancel-application-{selected_application['id']}",
+                        ):
+                            try:
+                                api(
+                                    "POST",
+                                    f"/applications/{selected_application['id']}/resolve",
+                                    json={"action": "cancelled"},
+                                )
+                                st.success(
+                                    "Application cancelled. It will not be replayed automatically."
+                                )
+                                st.rerun()
+                            except RuntimeError as exc:
+                                st.error(str(exc))
         except RuntimeError as exc:
             st.warning(f"Application history unavailable: {exc}")
 

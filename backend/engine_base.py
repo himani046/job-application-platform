@@ -1071,7 +1071,7 @@ class Engine:
                                 ]
                                 if value
                             )
-                            text = re.sub(r"\\s+", " ", text).strip()
+                            text = re.sub(r"\s+", " ", text).strip()
 
                             if regex.search(text):
                                 key = await candidate.get_attribute(

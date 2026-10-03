@@ -892,7 +892,51 @@ class Engine:
 
         return False
 
+    async def linkedin_authenticated_present(self) -> bool:
+        """Detect an authenticated LinkedIn shell before treating password inputs as login."""
+        if self.run.request.portal != "linkedin":
+            return False
+
+        authenticated_selectors = [
+            'button[aria-label*="Me" i]',
+            'a[aria-label*="Me" i]',
+            '[data-control-name*="identity_profile" i]',
+            'a[href*="/in/"]',
+            'a[href*="/mynetwork/"]',
+            'a[href*="/messaging/"]',
+        ]
+
+        for selector in authenticated_selectors:
+            try:
+                locator = self.page.locator(selector)
+                for index in range(await locator.count()):
+                    if await locator.nth(index).is_visible():
+                        return True
+            except Exception:
+                continue
+
+        try:
+            nav = self.page.locator("header nav, nav")
+            for index in range(await nav.count()):
+                item = nav.nth(index)
+                if not await item.is_visible():
+                    continue
+                text = re.sub(r"\s+", " ", await item.inner_text()).strip()
+                if re.search(r"\bMe\b", text, re.I):
+                    return True
+        except Exception:
+            pass
+
+        return False
+
     async def login_present(self) -> bool:
+        # LinkedIn may keep hidden authentication controls mounted in an
+        # otherwise authenticated job page. Prefer positive authenticated
+        # signals before treating password fields as a login requirement.
+        if self.run.request.portal == "linkedin":
+            if await self.linkedin_authenticated_present():
+                return False
+
         if re.search(
             r"/(?:login|signin|sign-in|checkpoint|authwall)(?:/|\?|$)",
             self.page.url,

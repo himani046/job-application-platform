@@ -1096,6 +1096,111 @@ class Engine:
 
         return None
 
+    async def find_linkedin_next_button(self) -> dict | None:
+        """Find LinkedIn Easy Apply navigation even when the footer is outside the form scope."""
+        if self.run.request.portal != "linkedin":
+            return None
+
+        pattern = re.compile(
+            r"^(?:next|continue|review(?: application)?|save and continue)"
+            r"(?:\s*[:\-].*)?$",
+            re.I,
+        )
+
+        for frame in self.page.frames:
+            try:
+                # Search broadly because LinkedIn can render the sticky footer
+                # outside the dialog/form subtree used by FORM_SCRIPT.
+                candidates = await frame.locator(
+                    'button, [role="button"], input[type="submit"], '
+                    'a, [data-control-name*="continue" i], '
+                    '[data-control-name*="next" i]'
+                ).all()
+
+                for candidate in candidates:
+                    if not await candidate.is_visible():
+                        continue
+
+                    text = " ".join(
+                        value
+                        for value in [
+                            await candidate.inner_text(),
+                            await candidate.get_attribute("aria-label"),
+                            await candidate.get_attribute("title"),
+                            await candidate.get_attribute("value"),
+                            await candidate.get_attribute("data-control-name"),
+                        ]
+                        if value
+                    )
+                    text = re.sub(r"\s+", " ", text).strip()
+
+                    if not pattern.search(text):
+                        continue
+
+                    if await candidate.get_attribute("aria-disabled") == "true":
+                        self.run.log(
+                            f"LinkedIn navigation '{text}' is currently disabled.",
+                            "warning",
+                        )
+                        continue
+
+                    if await candidate.is_disabled():
+                        self.run.log(
+                            f"LinkedIn navigation '{text}' is currently disabled.",
+                            "warning",
+                        )
+                        continue
+
+                    key = await candidate.get_attribute("data-job-agent-id")
+                    if not key:
+                        key = str(uuid.uuid4())
+                        await candidate.set_attribute("data-job-agent-id", key)
+
+                    return {
+                        "key": key,
+                        "text": text,
+                        "frame": frame,
+                    }
+
+                # Last-resort text lookup for controls whose clickable
+                # container is not itself a semantic button.
+                text_nodes = frame.get_by_text(
+                    re.compile(r"^\s*(?:Next|Continue)\s*$", re.I)
+                )
+
+                for index in range(await text_nodes.count()):
+                    node = text_nodes.nth(index)
+                    if not await node.is_visible():
+                        continue
+
+                    for selector in [
+                        "button",
+                        '[role="button"]',
+                        'a',
+                    ]:
+                        parent = node.locator(f"xpath=ancestor::{selector}[1]")
+                        if await parent.count() == 1 and await parent.is_visible():
+                            text = (await parent.inner_text()).strip()
+                            if await parent.get_attribute("aria-disabled") == "true":
+                                continue
+
+                            key = await parent.get_attribute("data-job-agent-id")
+                            if not key:
+                                key = str(uuid.uuid4())
+                                await parent.set_attribute(
+                                    "data-job-agent-id", key
+                                )
+
+                            return {
+                                "key": key,
+                                "text": text or "Next",
+                                "frame": frame,
+                            }
+            except Exception:
+                continue
+
+        return None
+
     async def confirmed(self) -> bool:
         text = await self.page_text()
 
@@ -2376,7 +2481,19 @@ class Engine:
                 self.navigation_attempts.clear()
                 continue
 
-            next_button = await self.find_button(self.button_pattern("next", r"next|continue|review|save and continue|continue application|review application|next step"))
+            next_button = None
+
+            if self.run.request.portal == "linkedin":
+                next_button = await self.find_linkedin_next_button()
+
+            if next_button is None:
+                next_button = await self.find_button(
+                    self.button_pattern(
+                        "next",
+                        r"next|continue|review|save and continue|"
+                        r"continue application|review application|next step"
+                    )
+                )
 
             if next_button:
                 signature = (

@@ -1033,10 +1033,64 @@ class Engine:
 
         for frame in self.page.frames:
             try:
-                for button in await frame.evaluate(BUTTON_SCRIPT):
-                    if regex.fullmatch(button["text"]):
+                buttons = await frame.evaluate(BUTTON_SCRIPT)
+
+                for button in buttons:
+                    text = (button.get("text") or "").strip()
+
+                    # Portal UIs frequently add context around an action
+                    # ("Next: Education", "Continue to next step", etc.).
+                    # A full-string match was too strict for LinkedIn's
+                    # dynamically rendered Easy Apply controls.
+                    if regex.fullmatch(text) or regex.search(text):
                         button["frame"] = frame
                         return button
+
+                # LinkedIn sometimes exposes the action through aria-label
+                # or button markup that is not represented cleanly by the
+                # generic action scan. Re-query visible controls directly.
+                if self.run.request.portal == "linkedin":
+                    candidates = await frame.locator(
+                        'button, [role="button"], input[type="submit"]'
+                    ).all()
+
+                    for candidate in candidates:
+                        try:
+                            if not await candidate.is_visible():
+                                continue
+                            if await candidate.is_disabled():
+                                continue
+
+                            text = " ".join(
+                                value
+                                for value in [
+                                    await candidate.inner_text(),
+                                    await candidate.get_attribute("aria-label"),
+                                    await candidate.get_attribute("title"),
+                                    await candidate.get_attribute("value"),
+                                ]
+                                if value
+                            )
+                            text = re.sub(r"\\s+", " ", text).strip()
+
+                            if regex.search(text):
+                                key = await candidate.get_attribute(
+                                    "data-job-agent-id"
+                                )
+                                if not key:
+                                    key = str(uuid.uuid4())
+                                    await candidate.set_attribute(
+                                        "data-job-agent-id", key
+                                    )
+
+                                return {
+                                    "key": key,
+                                    "text": text,
+                                    "frame": frame,
+                                }
+                        except Exception:
+                            continue
+
             except Exception:
                 continue
 

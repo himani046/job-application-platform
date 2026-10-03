@@ -1218,9 +1218,16 @@ class Engine:
         found: dict[str, dict] = {}
         keywords = compact(self.run.request.keywords).split()
 
-        for pass_number in range(4):
+        # LinkedIn virtualizes its result list. Scrolling the document itself
+        # may leave the visible job list unchanged, so discovery explicitly
+        # scrolls the known results containers and rescans after each load.
+        max_passes = 12
+        stagnant_passes = 0
+
+        for pass_number in range(max_passes):
             await self.settle()
             await self.clear_obstacles()
+            before_count = len(found)
 
             for frame in self.page.frames:
                 try:
@@ -1307,16 +1314,54 @@ class Engine:
                         "url": url,
                     }
 
-            self.run.results = list(found.values())[:50]
+            self.run.results = list(found.values())[:100]
 
+            added = len(found) - before_count
             self.run.log(
-                f"Discovery pass {pass_number + 1}/4: "
-                f"{len(self.run.results)} unique candidate links."
+                f"Discovery pass {pass_number + 1}/{max_passes}: "
+                f"{len(self.run.results)} unique candidate links "
+                f"(+{added} this pass)."
             )
 
-            if pass_number < 3:
-                await self.page.mouse.wheel(0, 900)
-                await asyncio.sleep(0.7)
+            if added == 0:
+                stagnant_passes += 1
+            else:
+                stagnant_passes = 0
+
+            if stagnant_passes >= 2:
+                self.run.log(
+                    "LinkedIn job-list scrolling produced no new links "
+                    "for two consecutive passes; ending discovery."
+                )
+                break
+
+            # Scroll the virtualized LinkedIn results list, not just the
+            # document. Keep the page-level wheel as a fallback for layouts
+            # that do not expose the standard list container.
+            for frame in self.page.frames:
+                try:
+                    await frame.locator(
+                        ".jobs-search-results-list, "
+                        ".jobs-search-results__list, "
+                        "ul.scaffold-layout__list, "
+                        ".scaffold-layout__list"
+                    ).evaluate_all(
+                        """
+                        elements => elements.forEach(el => {
+                            el.scrollTop = el.scrollHeight;
+                            el.dispatchEvent(new Event("scroll", {bubbles: true}));
+                        })
+                        """
+                    )
+                except Exception:
+                    pass
+
+            try:
+                await self.page.mouse.wheel(0, 1400)
+            except Exception:
+                pass
+
+            await asyncio.sleep(1.0)
 
         await self.enrich_job_results()
 

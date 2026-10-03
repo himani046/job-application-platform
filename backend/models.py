@@ -96,6 +96,11 @@ class RunRequest(StrictModel):
     scheduled_at: str | None = None
 
 
+class ResolveUncertainApplication(StrictModel):
+    action: Literal["retry", "submitted"]
+    confirmation_text: str | None = None
+
+
 class RunCommand(StrictModel):
     action: Literal[
         "resume",

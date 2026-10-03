@@ -42,6 +42,7 @@ from backend.models import (
     ApplicationRecord,
     JobMatchRequest,
     Profile,
+    ResolveUncertainApplication,
     RunCommand,
     RunRequest,
 )
@@ -492,6 +493,57 @@ async def application_plan(job_id: str, profile_id: str):
             "Final submission still requires human approval.",
         ],
     }
+
+
+@app.post("/applications/{application_id}/resolve", dependencies=auth)
+async def resolve_uncertain_application(
+    application_id: str,
+    request: ResolveUncertainApplication,
+):
+    """Explicitly resolve a submission-uncertain application before replay."""
+    try:
+        application = get_application(application_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+    if application.status != "submission_uncertain":
+        raise HTTPException(
+            409,
+            f"Application is not submission_uncertain; current status is '{application.status}'.",
+        )
+
+    if application.run_id:
+        run = manager.runs.get(application.run_id)
+        if run and run.status in {"queued", "running", "waiting"}:
+            raise HTTPException(
+                409,
+                "The browser run is still active. Stop it before resolving the application.",
+            )
+
+    if request.action == "submitted":
+        application.status = "submitted"
+        application.human_approved = True
+        if request.confirmation_text:
+            application.confirmation_text = request.confirmation_text
+        record_event(
+            application,
+            "uncertain_resolved_submitted",
+            "Candidate explicitly verified the application as submitted; automatic replay remains blocked.",
+        )
+        return application.model_dump(mode="json")
+
+    application.status = "failed"
+    application.run_id = None
+    application.human_approved = False
+    application.confirmation_text = None
+    record_event(
+        application,
+        "uncertain_resolved_retry",
+        "Candidate explicitly verified that the prior submission was not completed; application is eligible for a fresh run.",
+    )
+    return application.model_dump(mode="json")
 
 
 @app.get("/applications/{application_id}", dependencies=auth)

@@ -1178,6 +1178,64 @@ class Engine:
                         except Exception:
                             continue
 
+                # Last-resort CSS text matching for LinkedIn's sticky footer.
+                # This is intentionally limited to visible controls with exact
+                # navigation text so the underlying Easy Apply entry button
+                # cannot be mistaken for a navigation action.
+                for selector in [
+                    'button:has-text("Next")',
+                    '[role="button"]:has-text("Next")',
+                    'button:has-text("Continue")',
+                    '[role="button"]:has-text("Continue")',
+                    'input[type="submit"][value="Next"]',
+                    'input[type="button"][value="Next"]',
+                ]:
+                    try:
+                        controls = frame.locator(selector)
+                        for index in range(await controls.count()):
+                            candidate = controls.nth(index)
+                            if not await candidate.is_visible():
+                                continue
+                            if await candidate.get_attribute("aria-disabled") == "true":
+                                continue
+                            if await candidate.is_disabled():
+                                continue
+
+                            text = " ".join(
+                                value
+                                for value in [
+                                    await candidate.inner_text(),
+                                    await candidate.get_attribute("aria-label"),
+                                    await candidate.get_attribute("title"),
+                                    await candidate.get_attribute("value"),
+                                ]
+                                if value
+                            )
+                            text = re.sub(r"\s+", " ", text).strip()
+
+                            if not re.fullmatch(
+                                r"(?:Next|Continue|Review application|Save and continue)",
+                                text,
+                                re.I,
+                            ):
+                                continue
+
+                            key = await candidate.get_attribute("data-job-agent-id")
+                            if not key:
+                                key = str(uuid.uuid4())
+                                await candidate.set_attribute("data-job-agent-id", key)
+
+                            self.run.log(
+                                f"LinkedIn navigation control found via CSS fallback: {text}"
+                            )
+                            return {
+                                "key": key,
+                                "text": text,
+                                "frame": frame,
+                            }
+                    except Exception:
+                        continue
+
                 # Search broadly because LinkedIn can render the sticky footer
                 # outside the dialog/form subtree used by FORM_SCRIPT.
                 candidates = await frame.locator(
@@ -2554,6 +2612,10 @@ class Engine:
 
             if self.run.request.portal == "linkedin":
                 next_button = await self.find_linkedin_next_button()
+                if next_button:
+                    self.run.log(
+                        f"LinkedIn step navigation detected before submission checks: {next_button['text']}"
+                    )
 
             if next_button is None:
                 next_button = await self.find_button(

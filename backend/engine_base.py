@@ -1178,6 +1178,55 @@ class Engine:
                         except Exception:
                             continue
 
+                # LinkedIn's current Easy Apply DOM renders navigation as:
+                # <dialog> ... <div> ... <footer><button><span>Next</span>
+                # Target that structure directly before generic button discovery.
+                for selector in [
+                    'dialog footer button',
+                    '[role="dialog"] footer button',
+                    'dialog button',
+                ]:
+                    try:
+                        controls = frame.locator(selector)
+                        count = await controls.count()
+                        for index in range(count):
+                            candidate = controls.nth(index)
+                            if not await candidate.is_visible():
+                                continue
+                            if await candidate.get_attribute("aria-disabled") == "true":
+                                continue
+                            if await candidate.is_disabled():
+                                continue
+
+                            text = (await candidate.inner_text()).strip()
+                            text = re.sub(r"\\s+", " ", text).strip()
+
+                            if not re.fullmatch(
+                                r"(?:Next|Continue|Review application|Save and continue)",
+                                text,
+                                re.I,
+                            ):
+                                continue
+
+                            key = await candidate.get_attribute("data-job-agent-id")
+                            if not key:
+                                key = str(uuid.uuid4())
+                                await candidate.set_attribute("data-job-agent-id", key)
+
+                            self.run.log(
+                                f"LinkedIn dialog footer navigation found: {text}"
+                            )
+                            return {
+                                "key": key,
+                                "text": text,
+                                "frame": frame,
+                            }
+                    except Exception as exc:
+                        self.run.log(
+                            f"LinkedIn dialog navigation selector failed: {type(exc).__name__}",
+                            "warning",
+                        )
+
                 # Last-resort CSS text matching for LinkedIn's sticky footer.
                 # This is intentionally limited to visible controls with exact
                 # navigation text so the underlying Easy Apply entry button

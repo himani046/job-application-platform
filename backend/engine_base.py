@@ -1195,7 +1195,10 @@ class Engine:
                     key = await candidate.get_attribute("data-job-agent-id")
                     if not key:
                         key = str(uuid.uuid4())
-                        await candidate.set_attribute("data-job-agent-id", key)
+                        await candidate.evaluate(
+                                "(el, value) => el.setAttribute('data-job-agent-id', value)",
+                                key,
+                            )
 
                     self.run.log(
                         f"LinkedIn Next button FOUND in dialog: {text}"
@@ -2613,7 +2616,10 @@ class Engine:
                         key = await candidate.get_attribute("data-job-agent-id")
                         if not key:
                             key = str(uuid.uuid4())
-                            await candidate.set_attribute("data-job-agent-id", key)
+                            await candidate.evaluate(
+                                "(el, value) => el.setAttribute('data-job-agent-id', value)",
+                                key,
+                            )
                         submit_button = {
                             "key": key,
                             "text": submit_text,

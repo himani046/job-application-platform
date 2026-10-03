@@ -97,7 +97,7 @@ class RunRequest(StrictModel):
 
 
 class ResolveUncertainApplication(StrictModel):
-    action: Literal["retry", "submitted"]
+    action: Literal["retry", "submitted", "cancelled"]
     confirmation_text: str | None = None
 
 

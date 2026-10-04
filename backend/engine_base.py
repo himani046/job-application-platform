@@ -313,7 +313,7 @@ FORM_SCRIPT = r"""
                     );
                 }) ||
                 ""
-            ).replace(/\s+/g, " ").trim();
+            ).replace(/\\s+/g, " ").trim();
 
             result.push({
                 key: mark(el),
@@ -427,7 +427,7 @@ BUTTON_SCRIPT = r"""
                 el.innerText ||
                 el.value ||
                 ""
-            ).replace(/\s+/g, " ").trim()
+            ).replace(/\\s+/g, " ").trim()
         };
     }).filter(item => item.text);
 }
@@ -1360,7 +1360,7 @@ class Engine:
                         """
                         rules => {
                             const clean = value =>
-                                (value || "").replace(/\s+/g, " ").trim();
+                                (value || "").replace(/\\s+/g, " ").trim();
 
                             const read = selectors => {
                                 for (const selector of selectors || []) {
@@ -1463,7 +1463,7 @@ class Engine:
                                 el.getAttribute("aria-label") ||
                                 el.getAttribute("title") ||
                                 ""
-                            ).replace(/\s+/g, " ").trim()
+                            ).replace(/\\s+/g, " ").trim()
                         }))
                         """
                     )
@@ -2679,7 +2679,7 @@ class Engine:
                         };
 
                         const clean = value =>
-                            (value || "").replace(/\s+/g, " ").trim();
+                            (value || "").replace(/\\s+/g, " ").trim();
 
                         const nodes = [
                             ...document.querySelectorAll(

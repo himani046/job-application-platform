@@ -31,9 +31,20 @@ SEMANTICS = {
     "state": (r"\bstate\b", r"\bprovince\b"),
     "country": (r"\bcountry\b",),
     "postal_code": (r"\bpostal\b", r"\bzip\s*code\b"),
-    "degree": (r"\bdegree\b", r"\beducation\s+level\b"),
+    "degree": (
+        r"\bdegree\b",
+        r"\beducation\s+level\b",
+        r"\bhighest\s+qualification\b",
+        r"\bhighest\s+degree\b",
+        r"\bqualification\s+held\b",
+    ),
     "institution": (r"\buniversity\b", r"\bcollege\b", r"\binstitution\b"),
-    "years_experience": (r"\byears?\s+(?:of\s+)?experience\b", r"\bhow\s+many\s+years?\b.*\b(?:worked|work|experience|experienced)\b"),
+    "years_experience": (
+        r"\byears?\s+(?:of\s+)?experience\b",
+        r"\bexperience\s+in\s+years?\b",
+        r"\bexperience\s*\(?(?:in\s+)?years?\)?\b",
+        r"\bhow\s+many\s+years?\b.*\b(?:worked|work|experience|experienced)\b",
+    ),
     "notice_period": (r"\bnotice\s+period\b",),
     "skills": (
         r"^skills?$",

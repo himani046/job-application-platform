@@ -24,6 +24,7 @@ class UniversalFormTests(unittest.TestCase):
             ),
             education=[Education(institution="Test University", degree="B.Tech")],
             years_of_experience=2,
+            skills=["Python", "Machine Learning", "PyTorch", "SQL"],
         )
 
     def test_semantic_classification(self):
@@ -45,6 +46,24 @@ class UniversalFormTests(unittest.TestCase):
         ], self.make_profile())
         self.assertEqual(plan[0]["answer"], "TestFirst")
         self.assertEqual(plan[1]["answer"], "test@example.invalid")
+        self.assertEqual(plan[0]["action"], "fill")
+
+    def test_skill_set_uses_resume_profile_skills(self):
+        plan = plan_fields([
+            {
+                "key": "skills",
+                "kind": "text",
+                "label": "Skill Set",
+                "required": True,
+                "filled": False,
+                "options": [],
+                "meta": "",
+            },
+        ], self.make_profile())
+        self.assertEqual(
+            plan[0]["answer"],
+            "Python, Machine Learning, PyTorch, SQL",
+        )
         self.assertEqual(plan[0]["action"], "fill")
 
     def test_sensitive_fields_require_review(self):

@@ -1232,10 +1232,14 @@ class Engine:
                         )
                         continue
 
-                    if not re.fullmatch(
-                        r"(?:Next|Continue|Review application|Save and continue)",
-                        text,
-                        re.I,
+                    normalized_text = re.sub(r"\s+", " ", text).strip().lower()
+                    if not (
+                        normalized_text == "next"
+                        or normalized_text == "continue"
+                        or "review application" == normalized_text
+                        or "save and continue" == normalized_text
+                        or normalized_text.startswith("next ")
+                        or normalized_text.startswith("continue ")
                     ):
                         continue
 
@@ -1243,9 +1247,9 @@ class Engine:
                     if not key:
                         key = str(uuid.uuid4())
                         await candidate.evaluate(
-                                "(el, value) => el.setAttribute('data-job-agent-id', value)",
-                                key,
-                            )
+                            "(el, value) => el.setAttribute('data-job-agent-id', value)",
+                            key,
+                        )
 
                     self.run.log(
                         f"LinkedIn Next button FOUND in dialog: {text}"

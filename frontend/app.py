@@ -653,39 +653,113 @@ with profile_tab:
 
         st.subheader("Common Application Answers")
         st.caption(
-            "Save repetitive application answers once for this resume profile. "
-            "Future question wording can reuse the saved answer automatically."
+            "Edit answers directly in this table. Each row is a reusable "
+            "question group for this resume profile."
         )
 
         custom_answers = record["profile"].get("custom_answers", {})
 
         rows = []
+        common_by_key = {}
+
         for common in COMMON_QUESTIONS:
-            saved = common_answer_for_key(common.key, custom_answers)
+            common_by_key[common.key] = common
+
+            saved = common_answer_for_key(
+                common.key,
+                custom_answers,
+            )
+
             if not saved and common.key == "total_experience":
                 years = record["profile"].get("years_of_experience")
-                saved = f"{years:g} years" if years is not None else ""
+                saved = f"{years:g}" if years is not None else ""
             elif not saved and common.key == "current_location":
                 saved = personal.get("location", "")
             elif not saved and common.key == "notice_period":
-                saved = record["profile"].get("ats_defaults", {}).get("notice_period") or ""
+                saved = (
+                    record["profile"]
+                    .get("ats_defaults", {})
+                    .get("notice_period")
+                    or ""
+                )
 
             rows.append(
                 {
+                    "_key": common.key,
                     "Category": common.category,
                     "Question": common.label,
-                    "Answer": saved or "Not saved",
+                    "Answer": saved,
                 }
             )
 
-        st.dataframe(
+        edited_common = st.data_editor(
             rows,
             use_container_width=True,
             hide_index=True,
+            disabled=["_key", "Category", "Question"],
             column_config={
-                "Question": st.column_config.TextColumn(width="large"),
-                "Answer": st.column_config.TextColumn(width="large"),
+                "_key": None,
+                "Category": st.column_config.TextColumn(
+                    "Category",
+                    disabled=True,
+                    width="medium",
+                ),
+                "Question": st.column_config.TextColumn(
+                    "Question group",
+                    disabled=True,
+                    width="large",
+                ),
+                "Answer": st.column_config.TextColumn(
+                    "Saved answer",
+                    width="large",
+                    help="Edit this value directly.",
+                ),
             },
+            key=f"common-answer-editor-{selected_profile_id}",
+        )
+
+        if st.button(
+            "Save all common answers",
+            key=f"save-all-common-{selected_profile_id}",
+            type="primary",
+        ):
+            try:
+                latest = api(
+                    "GET",
+                    f"/profiles/{selected_profile_id}",
+                )["profile"]
+
+                latest_answers = latest.setdefault("custom_answers", {})
+
+                for row in edited_common:
+                    key = row.get("_key")
+                    answer = str(row.get("Answer") or "").strip()
+
+                    if key not in common_by_key:
+                        continue
+
+                    save_common_answer(
+                        latest_answers,
+                        key,
+                        answer,
+                    )
+
+                api(
+                    "PUT",
+                    f"/profiles/{selected_profile_id}",
+                    json=latest,
+                )
+
+                st.success("Common application answers saved.")
+                st.rerun()
+
+            except RuntimeError as exc:
+                st.error(str(exc))
+
+        st.caption(
+            "Tip: each row is a canonical group. For example, Current CTC "
+            "can recognize Current salary, Present CTC, Last drawn salary, "
+            "and other variants as the same answer."
         )
 
         common_options = {
@@ -694,7 +768,7 @@ with profile_tab:
         }
 
         selected_common_key = st.selectbox(
-            "Choose a common question to edit",
+            "Choose a question group to manage its variants",
             options=list(common_options),
             format_func=lambda key: common_options[key],
             key=f"common-question-{selected_profile_id}",
@@ -706,11 +780,16 @@ with profile_tab:
         )
 
         profile_aliases = record["profile"].get(
-            "common_answer_aliases", {}
+            "common_answer_aliases",
+            {},
         )
 
         builtin_aliases = list(selected_common.aliases)
-        custom_aliases = profile_aliases.get(selected_common_key, [])
+        custom_aliases = profile_aliases.get(
+            selected_common_key,
+            [],
+        )
+
         all_aliases = []
         seen_aliases = set()
 
@@ -725,8 +804,9 @@ with profile_tab:
         ):
             st.caption(
                 "All of these wordings are treated as the same question "
-                "and use the same saved answer."
+                "group and use the same saved answer."
             )
+
             if all_aliases:
                 for alias in all_aliases:
                     st.write(f"• {alias}")
@@ -740,7 +820,9 @@ with profile_tab:
                     "Add another wording to this group",
                     placeholder="e.g. What is your present salary?",
                 )
-                add_alias = st.form_submit_button("Add wording")
+                add_alias = st.form_submit_button(
+                    "Add wording",
+                )
 
             if add_alias:
                 if not new_alias.strip():
@@ -755,6 +837,7 @@ with profile_tab:
                         "common_answer_aliases",
                         {},
                     )
+
                     save_common_alias(
                         aliases,
                         selected_common_key,
@@ -772,70 +855,15 @@ with profile_tab:
                     )
                     st.rerun()
 
-        existing_common_answer = common_answer_for_key(
-            selected_common_key,
-            custom_answers,
-        )
-
-        with st.form(f"common-answer-form-{selected_profile_id}"):
-            if selected_common.input_type == "yes_no":
-                choices = ["", "Yes", "No"]
-                current_choice = (
-                    existing_common_answer
-                    if existing_common_answer in {"Yes", "No"}
-                    else ""
-                )
-                answer_index = choices.index(current_choice)
-
-                common_answer = st.radio(
-                    selected_common.label,
-                    options=choices,
-                    index=answer_index,
-                    horizontal=True,
-                    format_func=lambda value: value or "Not saved",
-                )
-            else:
-                common_answer = st.text_input(
-                    selected_common.label,
-                    value=existing_common_answer,
-                    placeholder="Enter the reusable answer...",
-                )
-
-            save_common = st.form_submit_button(
-                "Save common answer",
-                type="primary",
-            )
-
-        if save_common:
-            latest = api(
-                "GET",
-                f"/profiles/{selected_profile_id}",
-            )["profile"]
-
-            save_common_answer(
-                latest.setdefault("custom_answers", {}),
-                selected_common_key,
-                common_answer,
-            )
-
-            api(
-                "PUT",
-                f"/profiles/{selected_profile_id}",
-                json=latest,
-            )
-
-            st.success(
-                f"Saved reusable answer for: {selected_common.label}"
-            )
-            st.rerun()
-
         with st.expander("Add a custom repetitive question"):
             st.caption(
                 "Use this for a question not covered by the common library. "
                 "The exact question wording will be remembered for this profile."
             )
 
-            with st.form(f"custom-common-answer-{selected_profile_id}"):
+            with st.form(
+                f"custom-common-answer-{selected_profile_id}"
+            ):
                 custom_question = st.text_input(
                     "Question",
                     placeholder="e.g. Are you willing to work night shifts?",
@@ -844,7 +872,9 @@ with profile_tab:
                     "Answer",
                     placeholder="Yes",
                 )
-                save_custom = st.form_submit_button("Save custom answer")
+                save_custom = st.form_submit_button(
+                    "Save custom answer"
+                )
 
             if save_custom:
                 if not custom_question.strip():
@@ -856,6 +886,7 @@ with profile_tab:
                         "GET",
                         f"/profiles/{selected_profile_id}",
                     )["profile"]
+
                     latest.setdefault("custom_answers", {})[
                         normalize_common_question(custom_question)
                     ] = custom_answer.strip()
@@ -866,7 +897,9 @@ with profile_tab:
                         json=latest,
                     )
 
-                    st.success("Saved custom reusable question and answer.")
+                    st.success(
+                        "Saved custom reusable question and answer."
+                    )
                     st.rerun()
 
         st.divider()

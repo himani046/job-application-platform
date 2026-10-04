@@ -1744,6 +1744,38 @@ class Engine:
             if defaults.work_authorized is not None:
                 return "Yes" if defaults.work_authorized else "No"
 
+        # Answer boolean experience-range questions when the saved
+        # profile has a verified total-experience value. This is safe only
+        # for total/general experience; technology-specific experience still
+        # requires an explicit candidate fact.
+        if profile.years_of_experience is not None and "experience" in question:
+            range_match = re.search(
+                r"\\b(\\d+(?:\\.\\d+)?)\\s*(?:-|to)\\s*(\\d+(?:\\.\\d+)?)\\s*years?\\b",
+                question,
+            )
+            plus_match = re.search(
+                r"\\b(\\d+(?:\\.\\d+)?)\\s*\\+\\s*years?\\b",
+                question,
+            )
+
+            has_specific_skill = bool(
+                re.search(
+                    r"\\b(?:with|using|in)\\s+[a-z0-9+#.][^?]*",
+                    question,
+                )
+            )
+
+            if not has_specific_skill:
+                years = profile.years_of_experience
+                if range_match:
+                    lower = float(range_match.group(1))
+                    upper = float(range_match.group(2))
+                    return "Yes" if lower <= years <= upper else "No"
+
+                if plus_match:
+                    lower = float(plus_match.group(1))
+                    return "Yes" if years >= lower else "No"
+
         # LinkedIn uses several phrasings for the same verified
         # profile fact. Do not send these to the generic answer suggester.
         if (

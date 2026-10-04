@@ -2891,6 +2891,23 @@ class Engine:
             self.sync_application("form_analysis", "form_analysis", "Analyzing the current application form.")
 
             fields = await self.fields()
+            self.run.log(
+                f"Form analyzer detected {len(fields)} editable field(s) on step {step}."
+            )
+            for field in fields:
+                try:
+                    live_value = await self.read_field_value(field)
+                except Exception:
+                    live_value = ""
+                self.run.log(
+                    f"Field: {field.get('label', '<unlabeled>')} | "
+                    f"kind={field.get('kind')} | "
+                    f"required={field.get('required')} | "
+                    f"detected_filled={field.get('filled')} | "
+                    f"live_filled={bool(live_value.strip())} | "
+                    f"semantic={field.get('semantic', 'unknown')}"
+                )
+
             self.update_application_review(fields)
             self.sync_application("filling", "fields_detected", "Application fields detected and classified for review.")
             await self.focus_first_application_field(fields)
@@ -2972,6 +2989,31 @@ class Engine:
                     ),
                 )
                 continue
+
+            if not fields:
+                try:
+                    visible_controls = await self.page.locator(
+                        'dialog:visible input:not([type="hidden"]), '
+                        'dialog:visible select, dialog:visible textarea, '
+                        '[role="dialog"]:visible input:not([type="hidden"]), '
+                        '[role="dialog"]:visible select, '
+                        '[role="dialog"]:visible textarea'
+                    ).count()
+                except Exception:
+                    visible_controls = 0
+
+                if visible_controls:
+                    await self.run.pause(
+                        "form_analysis",
+                        (
+                            "The browser shows application controls, but the "
+                            "form analyzer recognized none. The runner is "
+                            "paused instead of clicking Next."
+                        ),
+                        ["resume"],
+                        visible_control_count=visible_controls,
+                    )
+                    continue
 
             errors = await self.visible_errors()
 

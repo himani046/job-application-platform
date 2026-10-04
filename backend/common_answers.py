@@ -11,12 +11,26 @@ class CommonQuestion:
     label: str
     category: str
     input_type: str = "text"
+    aliases: tuple[str, ...] = ()
     patterns: tuple[str, ...] = ()
 
 
 COMMON_QUESTIONS = (
     CommonQuestion(
         "current_ctc", "Current CTC", "Compensation",
+        aliases=(
+            "CTC",
+            "Current salary",
+            "Current CTC",
+            "Present salary",
+            "Present CTC",
+            "Current compensation",
+            "Current annual salary",
+            "Current annual compensation",
+            "Present compensation",
+            "Last drawn salary",
+            "Current package",
+        ),
         patterns=(
             r"\bcurrent\s+(?:ctc|compensation|salary)\b",
             r"\b(?:present|existing)\s+(?:ctc|compensation|salary)\b",
@@ -24,6 +38,16 @@ COMMON_QUESTIONS = (
     ),
     CommonQuestion(
         "expected_ctc", "Expected CTC", "Compensation",
+        aliases=(
+            "Expected salary",
+            "Expected CTC",
+            "Desired salary",
+            "Desired CTC",
+            "Expected compensation",
+            "Expected annual salary",
+            "Expected package",
+            "Salary expectation",
+        ),
         patterns=(
             r"\bexpected\s+(?:ctc|compensation|salary)\b",
             r"\bdesired\s+(?:ctc|compensation|salary)\b",
@@ -31,6 +55,13 @@ COMMON_QUESTIONS = (
     ),
     CommonQuestion(
         "notice_period", "Notice period", "Availability",
+        aliases=(
+            "Notice",
+            "Notice period",
+            "Notice duration",
+            "Serving notice period",
+            "How long is your notice period",
+        ),
         patterns=(
             r"\bnotice\s+period\b",
             r"\bnotice\s+duration\b",
@@ -38,6 +69,15 @@ COMMON_QUESTIONS = (
     ),
     CommonQuestion(
         "last_working_day", "Last working day / Available date", "Availability",
+        aliases=(
+            "Last working date",
+            "Last working day",
+            "Available date",
+            "Availability date",
+            "Date available to join",
+            "Earliest joining date",
+            "Joining date",
+        ),
         patterns=(
             r"\blast\s+working\s+day\b",
             r"\bavailable\s+(?:date|from|on)\b",
@@ -47,6 +87,13 @@ COMMON_QUESTIONS = (
     ),
     CommonQuestion(
         "current_location", "Current location", "Location",
+        aliases=(
+            "Location",
+            "Current city",
+            "Present location",
+            "Current base location",
+            "Where are you currently located",
+        ),
         patterns=(
             r"\bcurrent\s+location\b",
             r"\bcurrent\s+city\b",
@@ -55,6 +102,13 @@ COMMON_QUESTIONS = (
     ),
     CommonQuestion(
         "preferred_location", "Preferred location(s)", "Location",
+        aliases=(
+            "Preferred location",
+            "Preferred locations",
+            "Desired location",
+            "Preferred work location",
+            "Job location preference",
+        ),
         patterns=(
             r"\bpreferred\s+(?:location|locations)\b",
             r"\bpreferred\s+(?:work|job)\s+location\b",
@@ -66,6 +120,12 @@ COMMON_QUESTIONS = (
         "Comfortable working from the specified office?",
         "Work arrangement",
         "yes_no",
+        aliases=(
+            "Comfortable working from office",
+            "Willing to work from office",
+            "Comfortable working from the Bengaluru office",
+            "Are you comfortable working from the office",
+        ),
         patterns=(
             r"\bcomfortable\s+working\s+(?:from|in)\s+.+\boffice\b",
             r"\bwilling\s+to\s+work\s+(?:from|in)\s+.+\boffice\b",
@@ -96,6 +156,13 @@ COMMON_QUESTIONS = (
     ),
     CommonQuestion(
         "total_experience", "Total years of IT experience", "Experience",
+        aliases=(
+            "Total experience",
+            "Total years of experience",
+            "Total IT experience",
+            "Years of experience",
+            "Experience in years",
+        ),
         patterns=(
             r"\btotal\s+(?:years?\s+(?:of\s+)?(?:it\s+)?experience|it\s+experience)\b",
             r"\btotal\s+year\s+of\s+experience\b",
@@ -213,9 +280,22 @@ def get_common_question(key: str) -> CommonQuestion | None:
     return None
 
 
-def matches_common_question(question: str, item: CommonQuestion) -> bool:
+def matches_common_question(
+    question: str,
+    item: CommonQuestion,
+    extra_aliases: tuple[str, ...] = (),
+) -> bool:
+    normalized = normalize_common_question(question)
+
+    if normalized == normalize_common_question(item.label):
+        return True
+
+    aliases = (*item.aliases, *extra_aliases)
+    if any(normalized == normalize_common_question(alias) for alias in aliases):
+        return True
+
     return any(
-        re.search(pattern, normalize_common_question(question), re.I)
+        re.search(pattern, normalized, re.I)
         for pattern in item.patterns
     )
 
@@ -223,6 +303,7 @@ def matches_common_question(question: str, item: CommonQuestion) -> bool:
 def common_answer_for_question(
     question: str,
     custom_answers: Mapping[str, str] | None,
+    common_aliases: Mapping[str, list[str]] | None = None,
 ) -> str | None:
     if not custom_answers:
         return None
@@ -234,7 +315,13 @@ def common_answer_for_question(
         return str(exact).strip()
 
     for item in COMMON_QUESTIONS:
-        if not matches_common_question(question, item):
+        extra = tuple(
+            common_aliases.get(item.key, ())
+            if common_aliases
+            else ()
+        )
+
+        if not matches_common_question(question, item, extra):
             continue
 
         canonical = normalize_common_question(item.label)
@@ -274,3 +361,26 @@ def save_common_answer(
 
     if answer.strip():
         custom_answers[canonical] = answer.strip()
+
+
+def save_common_alias(
+    common_aliases: dict[str, list[str]],
+    key: str,
+    alias: str,
+) -> None:
+    item = get_common_question(key)
+    cleaned = normalize_common_question(alias)
+
+    if not item:
+        raise KeyError(key)
+    if not cleaned or cleaned == normalize_common_question(item.label):
+        return
+
+    bucket = common_aliases.setdefault(key, [])
+    existing = {
+        normalize_common_question(value)
+        for value in bucket
+    }
+
+    if cleaned not in existing:
+        bucket.append(alias.strip())

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import ipaddress
 import re
 import socket
@@ -2499,6 +2500,120 @@ class Engine:
         )
         return True
 
+    async def answer_choice_batch(self, items: list[dict]) -> bool:
+        """Present multiple choice fields from one step together in the frontend."""
+        questions = []
+
+        for index, item in enumerate(items):
+            if item.get("filled"):
+                continue
+
+            spec = build_field_spec(item)
+            answer = self.known_answer(item)
+
+            if answer is None:
+                answer = answer_from_profile(spec, self.profile)
+
+            questions.append({
+                "id": item["key"],
+                "question": item["label"],
+                "options": [
+                    option["label"]
+                    for option in item.get("options", [])
+                    if option.get("label")
+                ],
+                "suggestion": answer or "",
+                "required": item.get("required", False),
+                "category": review_field(item)["category"],
+            })
+
+        if not questions:
+            return False
+
+        self.sync_application(
+            "review",
+            "batch_human_input_required",
+            f"Frontend answer batch required for {len(questions)} choice questions.",
+        )
+
+        command = await self.run.pause(
+            "answer_batch",
+            (
+                f"{len(questions)} application questions are waiting for "
+                "answers. Review or change them in the frontend, then submit "
+                "the complete answer set."
+            ),
+            ["answer", "resume"],
+            batch_questions=questions,
+            question_count=len(questions),
+        )
+
+        if command.action == "resume":
+            await self.settle()
+            return True
+
+        try:
+            payload = json.loads(command.answer or "{}")
+        except (TypeError, json.JSONDecodeError):
+            self.run.log(
+                "Frontend returned an invalid batch-answer payload.",
+                "warning",
+            )
+            return True
+
+        answers = payload.get("answers", {})
+        remembers = payload.get("remember", {})
+
+        for item in items:
+            key = item["key"]
+            if item.get("filled") or key not in answers:
+                continue
+
+            answer = str(answers.get(key) or "").strip()
+            if not answer:
+                if item.get("required"):
+                    self.run.log(
+                        f"Required batch answer was empty: {item['label']}",
+                        "warning",
+                    )
+                continue
+
+            if await self.fill(item, answer):
+                self.handled.add((item["frame"].url, key))
+                self.run.log(
+                    f"Filled batch answer: {item['label']}"
+                )
+
+                if remembers.get(key) and self.run.request.profile_id:
+                    remember_answer(
+                        self.run.request.profile_id,
+                        item["label"],
+                        answer,
+                    )
+            else:
+                await self.run.pause(
+                    "answer",
+                    (
+                        f"The selected answer could not be applied to "
+                        f"'{item['label']}'."
+                    ),
+                    ["resume"],
+                    question=item["label"],
+                    options=[
+                        option["label"]
+                        for option in item.get("options", [])
+                    ],
+                    explanation=(
+                        "The browser control rejected the selected option. "
+                        "Complete this control manually in the browser, "
+                        "then Resume."
+                    ),
+                    required=item.get("required", False),
+                )
+                return True
+
+        return True
+
     async def answer_field(self, item: dict) -> bool:
         key = (item["frame"].url, item["key"])
 
@@ -3066,10 +3181,21 @@ class Engine:
 
                 changed = False
 
-                for item in fields:
-                    if await self.answer_field(item):
-                        changed = True
-                        break
+                unresolved_choices = [
+                    item
+                    for item in fields
+                    if item.get("kind") in {"radio", "checkbox"}
+                    and not item.get("filled")
+                    and (item["frame"].url, item["key"]) not in self.handled
+                ]
+
+                if len(unresolved_choices) > 1:
+                    changed = await self.answer_choice_batch(unresolved_choices)
+                else:
+                    for item in fields:
+                        if await self.answer_field(item):
+                            changed = True
+                            break
 
                 if changed:
                     continue

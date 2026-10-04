@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass, asdict
 from typing import Any
+from backend.common_answers import common_answer_for_question
 
 @dataclass(frozen=True)
 class FieldSpec:
@@ -105,7 +106,13 @@ def answer_from_profile(spec: FieldSpec, profile: Any) -> str | None:
             return None
     if answer is not None and str(answer).strip():
         return str(answer).strip()
-    return profile.custom_answers.get(re.sub(r"[^a-z0-9]+", " ", spec.label.lower()).strip())
+
+    return common_answer_for_question(
+        spec.label,
+        profile.custom_answers,
+    ) or profile.custom_answers.get(
+        re.sub(r"[^a-z0-9]+", " ", spec.label.lower()).strip()
+    )
 
 def plan_fields(items: list[dict], profile: Any) -> list[dict]:
     result = []

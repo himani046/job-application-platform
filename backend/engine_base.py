@@ -292,119 +292,107 @@ FORM_SCRIPT = r"""
             }
             seenRadioGroups.add(groupKey);
 
-            const optionLabelOf = radio => {
-                const id = radio.id || "";
-
-                if (id) {
-                    const labels = [...document.getElementsByTagName("label")];
-                    const linked = labels.find(label => label.htmlFor === id);
-                    if (linked) {
-                        const text = cleanQuestion(linked.innerText);
-                        if (text) return text;
-                    }
-                }
-
-                const wrapped = radio.closest("label");
-                if (wrapped) {
-                    const text = cleanQuestion(
-                        [...wrapped.childNodes]
-                            .filter(node => node !== radio)
-                            .map(node => node.textContent || "")
-                            .join(" ")
-                    );
-                    if (text) return text;
-                }
-
-                const sibling = radio.nextElementSibling;
-                if (sibling) {
-                    const text = cleanQuestion(sibling.innerText || sibling.textContent || "");
-                    if (text) return text;
-                }
-
-                return cleanQuestion(radio.value || "");
-            };
-
-            const optionLabels = members
-                .map(optionLabelOf)
-                .map(value => cleanQuestion(value))
-                .filter(Boolean);
-
-            const optionSet = new Set(
-                optionLabels.map(value => value.toLowerCase())
-            );
-
-            const explicitQuestion =
-                group?.querySelector(
-                    'legend, [role="heading"], [data-label], label'
-                )?.innerText ||
-                group?.getAttribute("aria-label") ||
-                group?.getAttribute("data-label") ||
-                "";
-
             const groupText = cleanQuestion(group?.innerText || "");
 
-            const stripOptions = value => {
-                let cleaned = cleanQuestion(value);
+            /*
+             * LinkedIn's current Easy Apply radio markup can wrap the two
+             * native inputs in a container whose text is "Yes No". The actual
+             * question is rendered in a sibling/ancestor text block.
+             */
+            const optionLabels = members.map((radio, index) => {
+                const labels = radio.labels
+                    ? [...radio.labels]
+                        .map(item => cleanQuestion(item.innerText))
+                        .filter(Boolean)
+                    : [];
 
-                for (const option of optionLabels) {
-                    const lower = option.toLowerCase();
-                    const lowerCleaned = cleaned.toLowerCase();
-                    const index = lowerCleaned.indexOf(lower);
+                const direct = labels.find(
+                    value => /^yes$/i.test(value) || /^no$/i.test(value)
+                );
 
-                    if (index >= 0) {
-                        cleaned =
-                            cleaned.slice(0, index) +
-                            " " +
-                            cleaned.slice(index + option.length);
-                    }
+                if (direct) {
+                    return /^yes$/i.test(direct) ? "Yes" : "No";
                 }
 
-                return cleaned
+                const aria = cleanQuestion(
+                    radio.getAttribute("aria-label") || ""
+                );
+
+                if (/^yes$/i.test(aria)) return "Yes";
+                if (/^no$/i.test(aria)) return "No";
+
+                const value = cleanQuestion(radio.value || "");
+                if (/^yes$/i.test(value)) return "Yes";
+                if (/^no$/i.test(value)) return "No";
+
+                return index === 0 ? "Yes" : "No";
+            });
+
+            const stripRadioOptions = value =>
+                cleanQuestion(value)
+                    .replace(/\byes\b/gi, " ")
+                    .replace(/\bno\b/gi, " ")
                     .replace(
                         /\b(?:this field is required|required|optional)\b/gi,
                         " "
                     )
                     .replace(/\s+/g, " ")
                     .trim();
-            };
 
-            const previousText = [
-                group?.previousElementSibling?.innerText || "",
-                group?.parentElement?.previousElementSibling?.innerText || "",
-                el.parentElement?.previousElementSibling?.innerText || "",
-                el.parentElement?.parentElement?.previousElementSibling?.innerText || ""
-            ]
-                .map(stripOptions)
-                .filter(Boolean);
+            const questionSources = [];
 
-            const questionCandidates = [
-                stripOptions(explicitQuestion),
-                stripOptions(groupText),
-                ...previousText
-            ];
+            const explicitQuestion =
+                group?.querySelector(
+                    'legend, [role="heading"], [data-label]'
+                )?.innerText ||
+                group?.getAttribute("aria-label") ||
+                group?.getAttribute("data-label") ||
+                "";
+
+            questionSources.push(explicitQuestion);
+
+            let questionNode = group;
+            for (let depth = 0; questionNode && depth < 5; depth++) {
+                const parent = questionNode.parentElement;
+
+                if (parent) {
+                    const children = [...parent.children];
+                    const position = children.indexOf(questionNode);
+
+                    for (let index = position - 1; index >= 0; index--) {
+                        questionSources.push(
+                            children[index]?.innerText || ""
+                        );
+                    }
+
+                    questionSources.push(parent.innerText || "");
+                }
+
+                questionNode = parent;
+            }
+
+            const questionCandidates = questionSources
+                .map(stripRadioOptions)
+                .filter(value => value && value.length > 2);
 
             const question = (
-                questionCandidates.find(value => {
-                    const normalized = value.toLowerCase();
-
-                    return (
-                        normalized &&
-                        !optionSet.has(normalized) &&
-                        !/^radio-group-|^_r_[a-z0-9_]+$/i.test(normalized) &&
-                        value.length > 2
-                    );
-                }) ||
+                questionCandidates.find(value =>
+                    /\?/.test(value) || /\*\s*$/.test(value)
+                ) ||
+                questionCandidates[0] ||
                 "Unlabeled radio question"
             ).trim();
 
-            const groupRequired = Boolean(
+            const groupRequired = questionSources.some(value =>
+                /\*\s*$/.test(cleanQuestion(value)) ||
+                /this field is required|required/i.test(value)
+            ) || Boolean(
                 group?.querySelector('[aria-required="true"]') ||
+                group?.querySelector('[required]') ||
                 members.some(item =>
                     item.required ||
                     item.getAttribute("aria-required") === "true"
-                ) ||
-                /(?:\*|this field is required|required)/i.test(groupText) ||
-                /\*\s*$/.test(question)
+                )
             );
 
             result.push({
@@ -415,8 +403,8 @@ FORM_SCRIPT = r"""
                 required: groupRequired,
                 input_type: type,
                 filled: members.some(item => item.checked),
-                options: members.map(item => ({
-                    label: optionLabelOf(item) || item.value || "Option",
+                options: members.map((item, index) => ({
+                    label: optionLabels[index] || item.value || "Option",
                     value: item.value,
                     key: mark(item)
                 })),

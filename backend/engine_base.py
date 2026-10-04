@@ -1770,6 +1770,7 @@ class Engine:
         common_answer = common_answer_for_question(
             item["label"],
             profile.custom_answers,
+            profile.common_answer_aliases,
         )
         if common_answer is not None:
             return common_answer

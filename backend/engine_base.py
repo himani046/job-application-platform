@@ -170,6 +170,11 @@ FORM_SCRIPT = r"""
 
     const result = [];
     const seenRadioGroups = new Set();
+    const cleanQuestion = value =>
+        (value || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 1000);
 
     for (const el of nodes) {
         const type = (el.type || "").toLowerCase();
@@ -1064,7 +1069,8 @@ class Engine:
 
         for frame in self.page.frames:
             try:
-                for item in await frame.evaluate(FORM_SCRIPT):
+                raw_items = await frame.evaluate(FORM_SCRIPT)
+                for item in raw_items:
                     item["frame"] = frame
                     item["portal_hints"] = await self.portal_field_hints(item)
                     spec = build_field_spec(item)
@@ -1072,8 +1078,12 @@ class Engine:
                     item["sensitive"] = spec.sensitive
                     item["answer_action"] = "review" if spec.sensitive else "auto_fill_or_review"
                     collected.append(item)
-            except Exception:
-                continue
+            except Exception as exc:
+                self.run.log(
+                    f"Form analyzer failed for frame {frame.url}: "
+                    f"{type(exc).__name__}: {str(exc)[:300]}",
+                    "warning",
+                )
 
         return collected
 

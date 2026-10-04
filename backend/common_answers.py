@@ -171,6 +171,34 @@ COMMON_QUESTIONS = (
             r"\brequire\s+.*sponsorship\b",
         ),
     ),
+    CommonQuestion(
+        "budget_fit", "Current / expected CTC within the stated budget?", "Compensation", "yes_no",
+        patterns=(
+            r"\b(?:current|expected)\s+(?:ctc|compensation|salary).*\bbudget\b",
+            r"\bctc\b.*\bwithin\s+(?:the\s+)?budget\b",
+        ),
+    ),
+    CommonQuestion(
+        "shift_work", "Comfortable working shifts?", "Work arrangement", "yes_no",
+        patterns=(
+            r"\bcomfortable\s+working\s+(?:in\s+)?shifts?\b",
+            r"\bwilling\s+to\s+work\s+(?:in\s+)?shifts?\b",
+        ),
+    ),
+    CommonQuestion(
+        "travel", "Willing to travel for work?", "Work arrangement", "yes_no",
+        patterns=(
+            r"\bwilling\s+to\s+travel\b",
+            r"\bcomfortable\s+with\s+travel\s+for\s+work\b",
+        ),
+    ),
+    CommonQuestion(
+        "employment_type", "Preferred employment type", "Employment",
+        patterns=(
+            r"\bpreferred\s+(?:employment|job)\s+type\b",
+            r"\bfull[- ]?time\s+(?:or|vs)\s+(?:part[- ]?time|contract)\b",
+        ),
+    ),
 )
 
 

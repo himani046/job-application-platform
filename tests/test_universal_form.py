@@ -1,6 +1,6 @@
 import unittest
 
-from backend.models import Education, PersonalDetails, OnlineProfiles, Profile
+from backend.models import Education, Employment, PersonalDetails, OnlineProfiles, Profile
 from backend.universal_form import build_field_spec, plan_fields
 
 
@@ -16,6 +16,7 @@ class UniversalFormTests(unittest.TestCase):
                 city="Test City",
                 state="Test State",
                 country="Test Country",
+                location="123 Test Street, Test City, Test State 123456",
             ),
             online_profiles=OnlineProfiles(
                 linkedin="https://example.invalid/in/test",
@@ -23,6 +24,7 @@ class UniversalFormTests(unittest.TestCase):
                 portfolio="https://example.invalid",
             ),
             education=[Education(institution="Test University", degree="B.Tech")],
+            work_history=[Employment(company="Test Co", title="Senior Analyst", current=True)],
             years_of_experience=2,
             skills=["Python", "Machine Learning", "PyTorch", "SQL"],
         )
@@ -94,6 +96,39 @@ class UniversalFormTests(unittest.TestCase):
             },
         ], self.make_profile())
         self.assertEqual(plan[0]["answer"], "B.Tech")
+        self.assertEqual(plan[0]["action"], "fill")
+
+
+    def test_street_uses_saved_location_fallback(self):
+        plan = plan_fields([
+            {
+                "key": "street",
+                "kind": "text",
+                "label": "Street",
+                "required": False,
+                "filled": False,
+                "options": [],
+                "meta": "",
+            },
+        ], self.make_profile())
+        self.assertEqual(
+            plan[0]["answer"],
+            "123 Test Street, Test City, Test State 123456",
+        )
+
+    def test_current_job_title_uses_current_employment(self):
+        plan = plan_fields([
+            {
+                "key": "title",
+                "kind": "text",
+                "label": "Current Job Title",
+                "required": True,
+                "filled": False,
+                "options": [],
+                "meta": "",
+            },
+        ], self.make_profile())
+        self.assertEqual(plan[0]["answer"], "Senior Analyst")
         self.assertEqual(plan[0]["action"], "fill")
 
     def test_sensitive_fields_require_review(self):

@@ -110,6 +110,7 @@ def answer_from_profile(spec: FieldSpec, profile: Any) -> str | None:
     return common_answer_for_question(
         spec.label,
         profile.custom_answers,
+        profile.common_answer_aliases,
     ) or profile.custom_answers.get(
         re.sub(r"[^a-z0-9]+", " ", spec.label.lower()).strip()
     )

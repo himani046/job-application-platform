@@ -2030,10 +2030,36 @@ class Engine:
             option = self.choose_option(answer, item["options"])
 
             if option is None:
+                answer_tokens = {
+                    token
+                    for token in re.findall(r"[a-z0-9]+", compact(answer).lower())
+                    if len(token) > 2
+                }
+
+                best = None
+                best_score = 0
+                for candidate in item.get("options", []):
+                    label = compact(candidate.get("label", "")).lower()
+                    if not label or label.startswith("select "):
+                        continue
+                    tokens = {
+                        token
+                        for token in re.findall(r"[a-z0-9]+", label)
+                        if len(token) > 2
+                    }
+                    score = len(answer_tokens & tokens)
+                    if score > best_score:
+                        best_score = score
+                        best = candidate
+
+                option = best if best_score >= 2 else None
+
+            if option is None:
                 return False
 
             await locator.select_option(value=option["value"])
-            return True
+            selected = await self.read_field_value(item)
+            return bool(selected and compact(selected).lower() != "select an option")
 
         if kind == "radio":
             option = self.choose_option(answer, item["options"])
@@ -2261,9 +2287,19 @@ class Engine:
             kind = item.get("kind", "text")
 
             if kind == "select":
-                return (
+                value = (
                     await locator.locator("option:checked").inner_text()
                 ).strip()
+                if compact(value).lower() in {
+                    "",
+                    "select",
+                    "select an option",
+                    "select an answer",
+                    "choose",
+                    "choose an option",
+                }:
+                    return ""
+                return value
 
             if kind == "radio":
                 for option in item.get("options", []):

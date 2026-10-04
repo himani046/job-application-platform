@@ -66,6 +66,36 @@ class UniversalFormTests(unittest.TestCase):
         )
         self.assertEqual(plan[0]["action"], "fill")
 
+    def test_linkedin_experience_in_years_uses_profile_experience(self):
+        plan = plan_fields([
+            {
+                "key": "experience",
+                "kind": "text",
+                "label": "Experience in Years",
+                "required": True,
+                "filled": False,
+                "options": [],
+                "meta": "",
+            },
+        ], self.make_profile())
+        self.assertEqual(plan[0]["answer"], "2")
+        self.assertEqual(plan[0]["action"], "fill")
+
+    def test_highest_qualification_uses_education_degree(self):
+        plan = plan_fields([
+            {
+                "key": "qualification",
+                "kind": "text",
+                "label": "Highest Qualification Held",
+                "required": True,
+                "filled": False,
+                "options": [],
+                "meta": "",
+            },
+        ], self.make_profile())
+        self.assertEqual(plan[0]["answer"], "B.Tech")
+        self.assertEqual(plan[0]["action"], "fill")
+
     def test_sensitive_fields_require_review(self):
         plan = plan_fields([
             {"key": "1", "kind": "radio", "label": "Will you require visa sponsorship?", "required": True, "filled": False,

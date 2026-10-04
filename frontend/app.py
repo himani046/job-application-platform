@@ -1,6 +1,11 @@
 import json
 import os
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import requests
 import streamlit as st
@@ -14,7 +19,6 @@ from backend.common_answers import (
 )
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
 API_BASE_URL = os.getenv(

@@ -1675,6 +1675,27 @@ class Engine:
         }:
             return personal.location or None
 
+        if re.search(r"street|address line|address 1", question):
+            return personal.street or None
+
+        if re.search(
+            r"current job title|current title|present job title|present title",
+            question,
+        ):
+            current_job = next(
+                (
+                    job.title
+                    for job in profile.work_history
+                    if job.current and job.title
+                ),
+                None,
+            )
+            if current_job:
+                return current_job
+
+            if profile.work_history and profile.work_history[0].title:
+                return profile.work_history[0].title
+
         if re.search(r"notice period", question):
             return defaults.notice_period
 
@@ -2139,6 +2160,15 @@ class Engine:
             if answer is not None
             else "Please provide a factual answer."
         )
+
+        if answer is None and not item["required"]:
+            # Unknown optional fields must never block the application.
+            # Leave them untouched and continue to the next field.
+            self.handled.add(key)
+            self.run.log(
+                f"Skipped optional field without a saved answer: {item['label']}"
+            )
+            return True
 
         if answer is None:
             self.run.log(

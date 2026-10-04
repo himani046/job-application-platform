@@ -349,44 +349,62 @@ FORM_SCRIPT = r"""
                 group?.getAttribute("data-label") ||
                 "";
 
-            questionSources.push(explicitQuestion);
+            const stripRadioOptions = value =>
+                cleanQuestion(value)
+                    .replace(/\byes\b/gi, " ")
+                    .replace(/\bno\b/gi, " ")
+                    .replace(
+                        /\b(?:this field is required|required|optional)\b/gi,
+                        " "
+                    )
+                    .replace(/\s+/g, " ")
+                    .trim();
 
-            let questionNode = group;
-            for (let depth = 0; questionNode && depth < 5; depth++) {
-                const parent = questionNode.parentElement;
+            /*
+             * The LinkedIn question is commonly rendered immediately before
+             * the Yes/No controls, while the radio container itself contains
+             * only the option text. Walk up the DOM and inspect the surrounding
+             * text. Prefer candidates that contain a question mark or required
+             * marker; never accept "Yes", "No", or "Yes No" as a question.
+             */
+            const questionSources = [
+                explicitQuestion,
+                group?.previousElementSibling?.innerText || "",
+                group?.parentElement?.previousElementSibling?.innerText || "",
+                group?.parentElement?.innerText || "",
+                group?.parentElement?.parentElement?.innerText || "",
+                group?.parentElement?.parentElement?.parentElement?.innerText || "",
+                group?.parentElement?.parentElement?.parentElement?.parentElement?.innerText || "",
+                el.parentElement?.previousElementSibling?.innerText || "",
+                el.parentElement?.parentElement?.previousElementSibling?.innerText || ""
+            ];
 
-                if (parent) {
-                    const children = [...parent.children];
-                    const position = children.indexOf(questionNode);
-
-                    for (let index = position - 1; index >= 0; index--) {
-                        questionSources.push(
-                            children[index]?.innerText || ""
-                        );
-                    }
-
-                    questionSources.push(parent.innerText || "");
-                }
-
-                questionNode = parent;
-            }
-
-            const questionCandidates = questionSources
+            const cleanedQuestionSources = questionSources
                 .map(stripRadioOptions)
-                .filter(value => value && value.length > 2);
+                .filter(value =>
+                    value &&
+                    value.length > 2 &&
+                    !/^yes$/i.test(value) &&
+                    !/^no$/i.test(value) &&
+                    !/^yes\s+no$/i.test(value)
+                );
 
-            const question = (
-                questionCandidates.find(value =>
+            const question =
+                cleanedQuestionSources.find(value =>
                     /\?/.test(value) || /\*\s*$/.test(value)
                 ) ||
-                questionCandidates[0] ||
-                "Unlabeled radio question"
-            ).trim();
+                cleanedQuestionSources.find(value =>
+                    /^(?:do|are|have|can|will|is|would|please|what|which|how)\b/i.test(value)
+                ) ||
+                "";
 
-            const groupRequired = questionSources.some(value =>
-                /\*\s*$/.test(cleanQuestion(value)) ||
-                /this field is required|required/i.test(value)
-            ) || Boolean(
+            const requiredText = questionSources.join(" ");
+
+            const groupRequired = Boolean(
+                /\*\s*$/.test(
+                    question.replace(/\s+/g, " ").trim()
+                ) ||
+                /this field is required|required/i.test(requiredText) ||
                 group?.querySelector('[aria-required="true"]') ||
                 group?.querySelector('[required]') ||
                 members.some(item =>
@@ -399,8 +417,12 @@ FORM_SCRIPT = r"""
                 key: mark(firstMember),
                 kind,
                 label: question,
-                meta,
-                required: groupRequired,
+                meta: meta + " Yes No",
+                required: groupRequired || (
+                    optionLabels.length === 2 &&
+                    optionLabels.every(option => /^(yes|no)$/i.test(option)) &&
+                    Boolean(question)
+                ),
                 input_type: type,
                 filled: members.some(item => item.checked),
                 options: members.map((item, index) => ({

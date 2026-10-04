@@ -35,6 +35,13 @@ SEMANTICS = {
     "institution": (r"\buniversity\b", r"\bcollege\b", r"\binstitution\b"),
     "years_experience": (r"\byears?\s+(?:of\s+)?experience\b", r"\bhow\s+many\s+years?\b.*\b(?:worked|work|experience|experienced)\b"),
     "notice_period": (r"\bnotice\s+period\b",),
+    "skills": (
+        r"^skills?$",
+        r"\bskill\s*set\b",
+        r"\btechnical\s+skills?\b",
+        r"\bkey\s+skills?\b",
+        r"\bskillset\b",
+    ),
 }
 
 def classify_semantic(label: str, meta: str = "", portal_hints: list[str] | None = None) -> str:
@@ -68,6 +75,11 @@ def answer_from_profile(spec: FieldSpec, profile: Any) -> str | None:
         "postal_code": p.postal_code,
         "years_experience": f"{profile.years_of_experience:g}" if profile.years_of_experience is not None else None,
         "notice_period": profile.ats_defaults.notice_period,
+        "skills": ", ".join(
+            skill.strip()
+            for skill in profile.skills
+            if str(skill).strip()
+        ) or None,
         "degree": profile.education[0].degree if profile.education else None,
         "institution": profile.education[0].institution if profile.education else None,
     }

@@ -67,6 +67,7 @@ class Profile(StrictModel):
     years_of_experience: float | None = Field(default=None, ge=0)
     ats_defaults: ATSDefaults = Field(default_factory=ATSDefaults)
     custom_answers: dict[str, str] = Field(default_factory=dict)
+    common_answer_aliases: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class AnswerSuggestion(StrictModel):

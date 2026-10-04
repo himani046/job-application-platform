@@ -1266,8 +1266,9 @@ class Engine:
                                 )
                                 if not key:
                                     key = str(uuid.uuid4())
-                                    await candidate.set_attribute(
-                                        "data-job-agent-id", key
+                                    await candidate.evaluate(
+                                        "(el, value) => el.setAttribute('data-job-agent-id', value)",
+                                        key,
                                     )
 
                                 return {
@@ -1362,6 +1363,56 @@ class Engine:
                     f"{type(exc).__name__}: {exc}",
                     "warning",
                 )
+
+        # Final LinkedIn fallback: query the visible dialog for a
+        # button whose rendered text contains Next. This covers the resume
+        # picker and other steps whose React structure does not expose the
+        # button through the stricter selectors above.
+        try:
+            candidates = self.page.locator(
+                'dialog:visible button:has-text("Next"), '
+                '[role="dialog"]:visible button:has-text("Next")'
+            )
+            count = await candidates.count()
+            self.run.log(
+                f"LinkedIn Next direct-text fallback -> {count} candidates."
+            )
+
+            for index in range(count):
+                candidate = candidates.nth(index)
+                if not await candidate.is_visible() or await candidate.is_disabled():
+                    continue
+
+                text = re.sub(
+                    r"\s+",
+                    " ",
+                    (await candidate.inner_text()).strip(),
+                )
+
+                if not re.search(r"\bnext\b", text, re.I):
+                    continue
+
+                key = await candidate.get_attribute("data-job-agent-id")
+                if not key:
+                    key = str(uuid.uuid4())
+                    await candidate.evaluate(
+                        "(el, value) => el.setAttribute('data-job-agent-id', value)",
+                        key,
+                    )
+
+                self.run.log(
+                    f"LinkedIn Next button FOUND via direct-text fallback: {text}"
+                )
+                return {
+                    "key": key,
+                    "text": text,
+                    "frame": self.page.main_frame,
+                }
+        except Exception as exc:
+            self.run.log(
+                f"LinkedIn direct Next fallback failed: {type(exc).__name__}: {exc}",
+                "warning",
+            )
 
         return None
 

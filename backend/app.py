@@ -362,7 +362,13 @@ async def upload_profile(file: UploadFile = File(...)):
 @app.get("/profiles/{profile_id}", dependencies=auth)
 async def read_profile(profile_id: str):
     try:
-        return get_record(profile_id)
+        record = get_record(profile_id)
+        # Normalize through the current Pydantic model so newly introduced
+        # profile fields are always included in the JSON sent to the frontend.
+        record["profile"] = Profile.model_validate(
+            record["profile"]
+        ).model_dump(mode="json")
+        return record
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except FileNotFoundError as exc:

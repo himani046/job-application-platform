@@ -1697,15 +1697,47 @@ class Engine:
             if defaults.work_authorized is not None:
                 return "Yes" if defaults.work_authorized else "No"
 
+        # LinkedIn uses several phrasings for the same verified
+        # profile fact. Do not send these to the generic answer suggester.
         if (
-            question in {
-                "years of experience",
-                "total years of experience",
-                "total experience",
-            }
-            and profile.years_of_experience is not None
+            profile.years_of_experience is not None
+            and (
+                re.search(r"\bexperience\s+in\s+years?\b", question)
+                or re.search(r"\byears?\s+(?:of\s+)?experience\b", question)
+                or question in {
+                    "total experience",
+                    "experience years",
+                }
+            )
         ):
-            return f"{profile.years_of_experience:g}"
+            # Skill-specific questions such as "experience with Python" must
+            # not be answered with total experience.
+            if not re.search(
+                r"\b(?:with|using|in)\s+[a-z0-9+#.]+",
+                question,
+            ):
+                return f"{profile.years_of_experience:g}"
+
+        if re.search(
+            r"\b(?:highest\s+qualification|highest\s+degree|"
+            r"qualification\s+held|degree|education\s+level)\b",
+            question,
+        ):
+            if profile.education and profile.education[0].degree:
+                return profile.education[0].degree
+
+        if re.search(
+            r"\b(?:skill\s*set|skills?|technical\s+skills?|"
+            r"key\s+skills?|skillset)\b",
+            question,
+        ):
+            skills = [
+                str(skill).strip()
+                for skill in profile.skills
+                if str(skill).strip()
+            ]
+            if skills:
+                return ", ".join(skills)
 
         if question in {"gender", "gender identity"}:
             return defaults.gender

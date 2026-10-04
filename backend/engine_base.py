@@ -2130,6 +2130,37 @@ class Engine:
                 except Exception:
                     return False
 
+            # If the application step was just opened, the runner may
+            # already have the correct control focused. Type into the actual
+            # active element first instead of switching to a generated React
+            # locator that can point at a stale/hidden node.
+            try:
+                active = self.page.locator(":focus")
+                if await active.count() == 1:
+                    active_tag = await active.evaluate(
+                        "el => el.tagName.toLowerCase()"
+                    )
+                    editable = await active.evaluate(
+                        "el => !el.disabled && !el.readOnly && "
+                        "('value' in el)"
+                    )
+                    if active_tag in {"input", "textarea"} and editable:
+                        await active.press("Control+A")
+                        await self.page.keyboard.type(answer, delay=12)
+                        actual = await active.input_value()
+                        if actual.strip() == answer.strip():
+                            await self.page.keyboard.press("Tab")
+                            self.run.log(
+                                f"Filled focused application field: {item['label']}"
+                            )
+                            return True
+                        self.run.log(
+                            f"Focused field rejected typed value for: {item['label']}",
+                            "warning",
+                        )
+            except Exception:
+                pass
+
             # First use the resolved semantic/label locator.
             if await type_and_verify(locator):
                 self.run.log(f"Filled and verified: {item['label']}")
@@ -2145,7 +2176,8 @@ class Engine:
                 return True
 
             self.run.log(
-                f"Could not verify text entered for: {item['label']}",
+                f"Could not verify text entered for: {item['label']}; "
+                "the application will not advance.",
                 "warning",
             )
             return False

@@ -2817,16 +2817,29 @@ class Engine:
                     0,
                 )
 
-                if attempts >= 2:
-                    await self.run.pause(
-                        "error",
-                        (
-                            "The form did not advance after navigation. "
-                            "Inspect validation messages or complete the "
-                            "step manually, then Resume."
-                        ),
-                        ["resume"],
-                    )
+                if attempts >= 4:
+                    current_errors = await self.visible_errors()
+                    if current_errors:
+                        await self.run.pause(
+                            "error",
+                            (
+                                "LinkedIn did not advance because the form "
+                                "reported a validation error. Review it in "
+                                "the frontend/browser and Resume."
+                            ),
+                            ["resume"],
+                            errors=current_errors,
+                        )
+                    else:
+                        await self.run.pause(
+                            "error",
+                            (
+                                "The Next button was clicked, but the "
+                                "application step did not change after "
+                                "several navigation attempts."
+                            ),
+                            ["resume"],
+                        )
 
                     self.navigation_attempts.clear()
                     continue
@@ -2838,6 +2851,51 @@ class Engine:
                 )
 
                 await self.locator(next_button).click()
+
+                # LinkedIn transitions its Easy Apply dialog asynchronously.
+                # Do not immediately compare the old field snapshot: the
+                # next page may still be rendering. Wait for either the URL,
+                # field set, or navigation button to change before rescanning.
+                previous_url = self.page.url
+                previous_labels = tuple(
+                    (item["label"], item["kind"])
+                    for item in fields
+                )
+
+                for _ in range(20):
+                    await asyncio.sleep(0.25)
+
+                    if self.page.url != previous_url:
+                        self.run.log(
+                            "Application URL changed after Next; rescanning."
+                        )
+                        break
+
+                    current_errors = await self.visible_errors()
+                    if current_errors:
+                        self.run.log(
+                            "Validation feedback appeared after Next; "
+                            "rescanning before another click.",
+                            "warning",
+                        )
+                        break
+
+                    try:
+                        refreshed_fields = await self.fields()
+                        refreshed_labels = tuple(
+                            (item["label"], item["kind"])
+                            for item in refreshed_fields
+                        )
+                        if refreshed_labels != previous_labels:
+                            self.run.log(
+                                "LinkedIn application fields changed after "
+                                "Next; rescanning the new step."
+                            )
+                            break
+                    except Exception:
+                        pass
+
+                await self.settle()
                 continue
 
             self.update_application_review(fields, errors)

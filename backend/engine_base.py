@@ -3189,8 +3189,26 @@ class Engine:
                     and (item["frame"].url, item["key"]) not in self.handled
                 ]
 
-                if len(unresolved_choices) > 1:
-                    changed = await self.answer_choice_batch(unresolved_choices)
+                # Automatically resolve choice questions for which the
+                # profile/custom-answer store already contains a verified
+                # answer. Only unresolved questions go to the frontend batch.
+                remaining_choices = []
+                for item in unresolved_choices:
+                    answer = self.known_answer(item)
+                    if answer is not None and await self.fill(item, answer):
+                        self.handled.add((item["frame"].url, item["key"]))
+                        self.run.log(
+                            f"Filled choice from saved profile answer: {item['label']}"
+                        )
+                        changed = True
+                    else:
+                        remaining_choices.append(item)
+
+                if changed:
+                    continue
+
+                if len(remaining_choices) > 1:
+                    changed = await self.answer_choice_batch(remaining_choices)
                 else:
                     for item in fields:
                         if await self.answer_field(item):

@@ -241,95 +241,150 @@ FORM_SCRIPT = r"""
             : "text";
 
         if (kind === "radio") {
+            const ancestors = [];
+            let cursor = el;
+
+            for (let depth = 0; cursor && cursor !== scope && depth < 8; depth++) {
+                ancestors.push(cursor);
+                cursor = cursor.parentElement;
+            }
+
+            let group = null;
+            let members = [];
+
+            // LinkedIn radio controls frequently have different or empty
+            // name attributes. Group by the nearest ancestor containing at
+            // least two visible radio inputs.
+            for (const candidate of ancestors) {
+                const radios = [...candidate.querySelectorAll(
+                    'input[type="radio"]'
+                )].filter(item => !item.disabled && visible(item));
+
+                if (radios.length >= 2 && radios.includes(el)) {
+                    group = candidate;
+                    members = radios;
+                    break;
+                }
+            }
+
+            if (!group) {
+                const sameName = el.name
+                    ? nodes.filter(other =>
+                        other.type === "radio" &&
+                        other.name === el.name &&
+                        other.form === el.form &&
+                        !other.disabled &&
+                        visible(other)
+                    )
+                    : [];
+
+                members = sameName.length >= 2 ? sameName : [el];
+                group = el.parentElement;
+            }
+
+            const firstMember = members[0] || el;
             const formIndex = [...document.forms].indexOf(el.form);
-            const groupKey = `${formIndex}:${el.name || mark(el)}`;
+            const groupKey =
+                String(formIndex) + ":" + mark(group || firstMember);
 
             if (seenRadioGroups.has(groupKey)) {
                 continue;
             }
-
             seenRadioGroups.add(groupKey);
 
-            const members = el.name
-                ? nodes.filter(other =>
-                    other.type === "radio" &&
-                    other.name === el.name &&
-                    other.form === el.form &&
-                    !other.disabled &&
-                    visible(other)
-                )
-                : [el];
+            const optionLabels = members
+                .map(item => labelOf(item))
+                .map(value => cleanQuestion(value))
+                .filter(Boolean);
 
-            const group = el.closest(
-                'fieldset, [role="radiogroup"], ' +
-                '[data-automation-id^="formField"], ' +
-                '[data-test-form-element], .form-group, .field, ' +
-                '.application-question, [class*="form-field"], [class*="formField"]'
-            );
-
-            const optionLabels = new Set(
-                members
-                    .map(item => labelOf(item))
-                    .map(value => cleanQuestion(value).toLowerCase())
-                    .filter(Boolean)
+            const optionSet = new Set(
+                optionLabels.map(value => value.toLowerCase())
             );
 
             const explicitQuestion =
-                group?.querySelector('legend, [role="heading"], label')?.innerText ||
+                group?.querySelector(
+                    'legend, [role="heading"], [data-label], label'
+                )?.innerText ||
                 group?.getAttribute("aria-label") ||
                 group?.getAttribute("data-label") ||
                 "";
 
             const groupText = cleanQuestion(group?.innerText || "");
 
-            // Some ATS forms render radio buttons without a fieldset/legend.
-            // In that layout the useful question is usually the text immediately
-            // before the radio group. Never use the generated React id/name as
-            // the question because it produces useless prompts such as
-            // "radio-group-*r_1o*".
+            const stripOptions = value => {
+                let cleaned = cleanQuestion(value);
+
+                for (const option of optionLabels) {
+                    const lower = option.toLowerCase();
+                    const lowerCleaned = cleaned.toLowerCase();
+                    const index = lowerCleaned.indexOf(lower);
+
+                    if (index >= 0) {
+                        cleaned =
+                            cleaned.slice(0, index) +
+                            " " +
+                            cleaned.slice(index + option.length);
+                    }
+                }
+
+                return cleaned
+                    .replace(
+                        /\b(?:this field is required|required|optional)\b/gi,
+                        " "
+                    )
+                    .replace(/\s+/g, " ")
+                    .trim();
+            };
+
             const previousText = [
-                el.closest("form")?.previousElementSibling?.innerText || "",
+                group?.previousElementSibling?.innerText || "",
+                group?.parentElement?.previousElementSibling?.innerText || "",
                 el.parentElement?.previousElementSibling?.innerText || "",
                 el.parentElement?.parentElement?.previousElementSibling?.innerText || ""
             ]
-                .map(cleanQuestion)
-                .filter(Boolean)
-                .join(" ");
-
-            const stripOptions = value =>
-                cleanQuestion(value)
-                    .replace(/\b(?:yes|no|true|false|select|choose|optional)\b/gi, " ")
-                    .replace(/\s+/g, " ")
-                    .trim();
+                .map(stripOptions)
+                .filter(Boolean);
 
             const questionCandidates = [
-                explicitQuestion,
+                stripOptions(explicitQuestion),
                 stripOptions(groupText),
-                stripOptions(previousText),
+                ...previousText
             ];
 
             const question = (
                 questionCandidates.find(value => {
-                    const normalized = cleanQuestion(value).toLowerCase();
+                    const normalized = value.toLowerCase();
+
                     return (
                         normalized &&
-                        !optionLabels.has(normalized) &&
-                        !/^radio-group-|^_r_[a-z0-9_]+$/i.test(normalized)
+                        !optionSet.has(normalized) &&
+                        !/^radio-group-|^_r_[a-z0-9_]+$/i.test(normalized) &&
+                        value.length > 2
                     );
                 }) ||
-                ""
-            ).replace(/\\s+/g, " ").trim();
+                "Unlabeled radio question"
+            ).trim();
+
+            const groupRequired = Boolean(
+                group?.querySelector('[aria-required="true"]') ||
+                members.some(item =>
+                    item.required ||
+                    item.getAttribute("aria-required") === "true"
+                ) ||
+                /(?:\*|this field is required|required)/i.test(groupText) ||
+                /\*\s*$/.test(question)
+            );
 
             result.push({
-                key: mark(el),
+                key: mark(firstMember),
                 kind,
                 label: question,
                 meta,
-                required: required || members.some(item => item.required),
+                required: groupRequired,
                 input_type: type,
                 filled: members.some(item => item.checked),
                 options: members.map(item => ({
-                    label: labelOf(item),
+                    label: labelOf(item) || item.value || "Option",
                     value: item.value,
                     key: mark(item)
                 })),

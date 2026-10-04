@@ -1360,7 +1360,7 @@ class Engine:
                         """
                         rules => {
                             const clean = value =>
-                                (value || "").replace(/\\s+/g, " ").trim();
+                                (value || "").replace(/\s+/g, " ").trim();
 
                             const read = selectors => {
                                 for (const selector of selectors || []) {
@@ -1463,7 +1463,7 @@ class Engine:
                                 el.getAttribute("aria-label") ||
                                 el.getAttribute("title") ||
                                 ""
-                            ).replace(/\\s+/g, " ").trim()
+                            ).replace(/\s+/g, " ").trim()
                         }))
                         """
                     )
@@ -1750,17 +1750,17 @@ class Engine:
         # requires an explicit candidate fact.
         if profile.years_of_experience is not None and "experience" in question:
             range_match = re.search(
-                r"\b(\\d+(?:\\.\\d+)?)\\s*(?:-|to)\\s*(\\d+(?:\\.\\d+)?)\\s*years?\b",
+                r"\b(\d+(?:\\.\d+)?)\s*(?:-|to)\s*(\d+(?:\\.\d+)?)\s*years?\b",
                 question,
             )
             plus_match = re.search(
-                r"\b(\\d+(?:\\.\\d+)?)\\s*\\+\\s*years?\b",
+                r"\b(\d+(?:\\.\d+)?)\s*\\+\s*years?\b",
                 question,
             )
 
             has_specific_skill = bool(
                 re.search(
-                    r"\b(?:with|using|in)\\s+[a-z0-9+#.][^?]*",
+                    r"\b(?:with|using|in)\s+[a-z0-9+#.][^?]*",
                     question,
                 )
             )
@@ -2457,7 +2457,7 @@ class Engine:
                         };
 
                         const clean = value =>
-                            (value || "").replace(/\\s+/g, " ").trim();
+                            (value || "").replace(/\s+/g, " ").trim();
 
                         const nodes = [
                             ...document.querySelectorAll(

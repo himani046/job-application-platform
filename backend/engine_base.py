@@ -2884,6 +2884,39 @@ class Engine:
                 )
                 continue
 
+            unresolved_required = []
+            for field in fields:
+                if not field.get("required") or field.get("kind") == "file":
+                    continue
+                try:
+                    value = await self.read_field_value(field)
+                except Exception:
+                    value = ""
+                if not compact(value):
+                    unresolved_required.append(field)
+
+            if unresolved_required:
+                field = unresolved_required[0]
+                await self.run.pause(
+                    "answer",
+                    f"Required field needs an answer before continuing: {field['label']}",
+                    ["answer", "resume"],
+                    question=field["label"],
+                    options=[
+                        option.get("label", "")
+                        for option in field.get("options", [])
+                        if option.get("label")
+                    ],
+                    current_value="",
+                    category=field.get("semantic", "application_field"),
+                    required=True,
+                    explanation=(
+                        "This required field is still empty. The application "
+                        "will not click Next until it has a value."
+                    ),
+                )
+                continue
+
             errors = await self.visible_errors()
 
             if errors:

@@ -19,7 +19,6 @@ COMMON_QUESTIONS = (
     CommonQuestion(
         "current_ctc", "Current CTC", "Compensation",
         aliases=(
-            "CTC",
             "Current salary",
             "Current CTC",
             "Present salary",

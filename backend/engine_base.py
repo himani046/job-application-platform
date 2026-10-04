@@ -2061,37 +2061,54 @@ class Engine:
             ):
                 return False
 
-            try:
-                await locator.fill(answer)
-                await locator.press("Tab")
-
-                validity = await locator.evaluate(
-                    "el => el.validity ? el.validity.valid : true"
-                )
-
-                if validity:
-                    return True
-            except Exception:
-                pass
-
-            # Fallback: use real keyboard Tab navigation when the field's
-            # generated locator is not interactable/reliable.
-            tab_locator = await self._tab_to_field(item)
-            if tab_locator is not None:
+            async def type_and_verify(target: Locator) -> bool:
                 try:
-                    await tab_locator.fill(answer)
-                    await self.page.keyboard.press("Tab")
-                    validity = await tab_locator.evaluate(
+                    await target.scroll_into_view_if_needed()
+                    await target.click()
+                    await target.press("Control+A")
+                    await target.type(answer, delay=12)
+
+                    actual = (
+                        await target.input_value()
+                        if await target.evaluate(
+                            "el => 'value' in el"
+                        )
+                        else ""
+                    )
+
+                    # React-controlled inputs can swallow a fill/type event.
+                    # Never report success until the candidate-visible value
+                    # actually contains the requested answer.
+                    if actual.strip() != answer.strip():
+                        return False
+
+                    await target.press("Tab")
+
+                    validity = await target.evaluate(
                         "el => el.validity ? el.validity.valid : true"
                     )
-                    if validity:
-                        self.run.log(
-                            f"Filled via keyboard Tab navigation: {item['label']}"
-                        )
-                        return True
+                    return bool(validity)
                 except Exception:
-                    pass
+                    return False
 
+            # First use the resolved semantic/label locator.
+            if await type_and_verify(locator):
+                self.run.log(f"Filled and verified: {item['label']}")
+                return True
+
+            # Then use real keyboard Tab navigation from the first form
+            # control. This handles unstable React-generated IDs.
+            tab_locator = await self._tab_to_field(item)
+            if tab_locator is not None and await type_and_verify(tab_locator):
+                self.run.log(
+                    f"Filled and verified via keyboard Tab: {item['label']}"
+                )
+                return True
+
+            self.run.log(
+                f"Could not verify text entered for: {item['label']}",
+                "warning",
+            )
             return False
 
         return False

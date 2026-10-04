@@ -10,6 +10,7 @@ from backend.common_answers import (
     common_answer_for_key,
     normalize_common_question,
     save_common_answer,
+    save_common_alias,
 )
 from dotenv import load_dotenv
 
@@ -699,6 +700,73 @@ with profile_tab:
             item for item in COMMON_QUESTIONS
             if item.key == selected_common_key
         )
+
+        profile_aliases = record["profile"].get(
+            "common_answer_aliases", {}
+        )
+
+        builtin_aliases = list(selected_common.aliases)
+        custom_aliases = profile_aliases.get(selected_common_key, [])
+        all_aliases = []
+        seen_aliases = set()
+
+        for alias in builtin_aliases + custom_aliases:
+            normalized_alias = normalize_common_question(alias)
+            if normalized_alias and normalized_alias not in seen_aliases:
+                seen_aliases.add(normalized_alias)
+                all_aliases.append(alias)
+
+        with st.expander(
+            f"Recognized variants for '{selected_common.label}'"
+        ):
+            st.caption(
+                "All of these wordings are treated as the same question "
+                "and use the same saved answer."
+            )
+            if all_aliases:
+                for alias in all_aliases:
+                    st.write(f"• {alias}")
+            else:
+                st.info("No aliases added yet.")
+
+            with st.form(
+                f"common-alias-form-{selected_profile_id}-{selected_common_key}"
+            ):
+                new_alias = st.text_input(
+                    "Add another wording to this group",
+                    placeholder="e.g. What is your present salary?",
+                )
+                add_alias = st.form_submit_button("Add wording")
+
+            if add_alias:
+                if not new_alias.strip():
+                    st.error("Enter a wording to add.")
+                else:
+                    latest = api(
+                        "GET",
+                        f"/profiles/{selected_profile_id}",
+                    )["profile"]
+
+                    aliases = latest.setdefault(
+                        "common_answer_aliases",
+                        {},
+                    )
+                    save_common_alias(
+                        aliases,
+                        selected_common_key,
+                        new_alias,
+                    )
+
+                    api(
+                        "PUT",
+                        f"/profiles/{selected_profile_id}",
+                        json=latest,
+                    )
+
+                    st.success(
+                        f"Added wording to '{selected_common.label}'."
+                    )
+                    st.rerun()
 
         existing_common_answer = common_answer_for_key(
             selected_common_key,

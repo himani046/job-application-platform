@@ -18,6 +18,7 @@ class PersonalDetails(StrictModel):
     state: str = ""
     country: str = ""
     postal_code: str = ""
+    street: str = ""
 
 
 class OnlineProfiles(StrictModel):

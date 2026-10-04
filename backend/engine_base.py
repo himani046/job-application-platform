@@ -2091,15 +2091,23 @@ class Engine:
 
         previous_value = await self.read_field_value(item)
 
+        self.sync_application(
+            "review",
+            "human_input_required",
+            f"Frontend answer required for application field: {item['label']}.",
+        )
+
         command = await self.run.pause(
             "answer",
-            f"Review the answer for: {item['label']}",
+            f"Answer required: {item['label']}",
             allowed,
             question=item["label"],
             options=options,
             suggestion=proposal or "",
             explanation=explanation,
             required=item["required"],
+            current_value=previous_value,
+            category=review["category"],
         )
 
         if command.action == "skip":
@@ -2126,16 +2134,45 @@ class Engine:
 
         if not await self.fill(item, approved):
             manual_previous_value = await self.read_field_value(item)
-            await self.run.pause(
-                "widget",
-                (
-                    f"The control for '{item['label']}' could not accept "
-                    "the answer. Complete it directly in the headed "
-                    "browser, then Resume. Native select and radio "
-                    "answers must match an option."
-                ),
-                ["resume"],
+            self.sync_application(
+                "review",
+                "answer_retry_required",
+                f"The browser control could not accept the proposed answer for: {item['label']}.",
             )
+            retry_command = await self.run.pause(
+                "answer",
+                (
+                    f"The browser control could not accept the answer for "
+                    f"'{item['label']}'. Choose a valid option or enter a "
+                    "different factual answer in the frontend."
+                ),
+                ["answer", "resume"],
+                question=item["label"],
+                options=options,
+                suggestion="",
+                explanation=(
+                    "The first answer did not pass the control validation. "
+                    "The browser remains paused while you provide another "
+                    "answer."
+                ),
+                required=item["required"],
+                current_value=manual_previous_value,
+                category=review["category"],
+            )
+
+            if retry_command.action == "answer" and retry_command.answer:
+                if await self.fill(item, retry_command.answer):
+                    self.handled.add(key)
+                    if retry_command.remember and self.run.request.profile_id:
+                        remember_answer(
+                            self.run.request.profile_id,
+                            item["label"],
+                            retry_command.answer,
+                        )
+                    self.run.log(
+                        f"Filled retry answer from frontend: {item['label']}"
+                    )
+                    return True
 
             await self.settle()
             await self.remember_manual_field_value(item, manual_previous_value)

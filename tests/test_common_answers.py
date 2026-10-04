@@ -6,6 +6,7 @@ from backend.common_answers import (
     common_answer_for_question,
     normalize_common_question,
     save_common_answer,
+    save_common_alias,
 )
 
 
@@ -26,6 +27,58 @@ class CommonAnswerTests(unittest.TestCase):
                 answers,
             ),
             "15.26 LPA",
+        )
+
+
+    def test_common_ctc_aliases_share_one_group(self):
+        answers = {"current ctc": "15.26 LPA"}
+
+        self.assertEqual(
+            common_answer_for_question("Current salary", answers),
+            "15.26 LPA",
+        )
+        self.assertEqual(
+            common_answer_for_question("Present CTC", answers),
+            "15.26 LPA",
+        )
+        self.assertEqual(
+            common_answer_for_question("Last drawn salary", answers),
+            "15.26 LPA",
+        )
+
+    def test_custom_alias_can_be_added_to_group(self):
+        aliases = {}
+        save_common_alias(
+            aliases,
+            "current_ctc",
+            "My present package",
+        )
+        self.assertEqual(
+            aliases["current_ctc"],
+            ["My present package"],
+        )
+
+    def test_profile_alias_uses_canonical_saved_answer(self):
+        answers = {"current ctc": "15.26 LPA"}
+        aliases = {"current_ctc": ["My present package"]}
+
+        self.assertEqual(
+            common_answer_for_question(
+                "My present package",
+                answers,
+                aliases,
+            ),
+            "15.26 LPA",
+        )
+
+    def test_bare_ctc_is_not_auto_assigned(self):
+        answers = {
+            "current ctc": "15.26 LPA",
+            "expected ctc": "25 LPA",
+        }
+
+        self.assertIsNone(
+            common_answer_for_question("CTC", answers)
         )
 
     def test_notice_period_variations_share_one_answer(self):

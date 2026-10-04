@@ -181,32 +181,92 @@ def live_console():
         allowed = pending["allowed"]
         token = pending["token"]
 
+        reason = pending.get("reason", "human_review")
+        browser_only = reason in {
+            "login",
+            "challenge",
+            "navigation",
+            "upload",
+            "widget",
+        }
+
+        if browser_only:
+            st.warning(
+                "This step requires a browser action. Answerable application "
+                "questions should be handled here in the frontend."
+            )
+        else:
+            st.error(
+                "🔴 Action required — answer this application step here. "
+                "The browser is paused until you respond."
+            )
+
+        if pending.get("category"):
+            st.caption(f"Category: {pending['category']}")
+
+        if pending.get("current_value"):
+            st.caption(
+                f"Current value detected in the form: {pending['current_value']}"
+            )
+
+        if pending.get("required") is not None:
+            st.caption(
+                "Required field" if pending["required"] else "Optional field"
+            )
+
         if pending.get("explanation"):
             st.info(pending["explanation"])
 
-        if pending.get("options"):
-            st.write("Available choices:")
-            st.code(
-                "\n".join(pending["options"]),
-                language=None,
-            )
-
         if "answer" in allowed:
-            answer = st.text_area(
-                pending.get("question", "Answer"),
-                value=pending.get("suggestion", ""),
-                key=f"answer-text-{token}",
-                height=140,
-            )
+            options = [
+                option for option in pending.get("options", [])
+                if str(option).strip()
+            ]
+
+            if options:
+                question = pending.get("question", "Answer")
+                normalized = {
+                    str(option).strip().lower()
+                    for option in options
+                }
+
+                if normalized.issubset({"yes", "no"}) or len(options) <= 6:
+                    suggestion = pending.get("suggestion", "")
+                    answer = st.radio(
+                        question,
+                        options=options,
+                        index=(
+                            options.index(suggestion)
+                            if suggestion in options
+                            else None
+                        ),
+                        key=f"answer-choice-{token}",
+                    )
+                else:
+                    answer = st.selectbox(
+                        question,
+                        options=options,
+                        index=(
+                            options.index(pending["suggestion"])
+                            if pending.get("suggestion") in options
+                            else 0
+                        ),
+                        key=f"answer-choice-{token}",
+                    )
+            else:
+                answer = st.text_area(
+                    pending.get("question", "Answer"),
+                    value=pending.get("suggestion", ""),
+                    key=f"answer-text-{token}",
+                    height=140,
+                )
 
             remember = st.checkbox(
                 "Remember this answer for this resume profile",
                 key=f"remember-{token}",
                 help=(
                     "The answer is saved only to the selected resume profile "
-                    "and can be reused on future applications. If you fill "
-                    "the field directly in the browser and click Resume, "
-                    "the platform can also remember the newly entered value."
+                    "and can be reused on future applications."
                 ),
             )
 
@@ -214,7 +274,7 @@ def live_console():
                 run_id,
                 pending,
                 "answer",
-                "Use reviewed answer",
+                "Submit answer & resume browser",
                 primary=True,
                 answer=answer,
                 remember=remember,

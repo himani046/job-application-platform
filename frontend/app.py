@@ -803,46 +803,70 @@ with profile_tab:
             f"Recognized variants for '{selected_common.label}'"
         ):
             st.caption(
-                "All of these wordings are treated as the same question "
-                "group and use the same saved answer."
+                "Edit, remove, or add wording variants here. Every variant "
+                "in this list maps to the same canonical question and saved answer."
             )
 
-            if all_aliases:
-                for alias in all_aliases:
-                    st.write(f"• {alias}")
-            else:
-                st.info("No aliases added yet.")
+            variant_rows = [
+                {"Variant": alias}
+                for alias in all_aliases
+            ]
 
-            with st.form(
-                f"common-alias-form-{selected_profile_id}-{selected_common_key}"
+            # Keep an empty starter row so a new wording can be entered
+            # directly in the editable table.
+            variant_rows.append({"Variant": ""})
+
+            edited_variants = st.data_editor(
+                variant_rows,
+                use_container_width=True,
+                hide_index=True,
+                num_rows="dynamic",
+                column_config={
+                    "Variant": st.column_config.TextColumn(
+                        "Recognized wording",
+                        width="large",
+                        help=(
+                            "Any wording entered here will be treated as "
+                            "the selected canonical question group."
+                        ),
+                    ),
+                },
+                key=f"common-variants-editor-{selected_profile_id}-{selected_common_key}",
+            )
+
+            if st.button(
+                "Save variants",
+                key=f"save-common-variants-{selected_profile_id}-{selected_common_key}",
+                type="primary",
             ):
-                new_alias = st.text_input(
-                    "Add another wording to this group",
-                    placeholder="e.g. What is your present salary?",
-                )
-                add_alias = st.form_submit_button(
-                    "Add wording",
-                )
-
-            if add_alias:
-                if not new_alias.strip():
-                    st.error("Enter a wording to add.")
-                else:
+                try:
                     latest = api(
                         "GET",
                         f"/profiles/{selected_profile_id}",
                     )["profile"]
 
-                    aliases = latest.setdefault(
-                        "common_answer_aliases",
-                        {},
-                    )
+                    cleaned_variants = []
+                    seen = set()
 
-                    save_common_alias(
-                        aliases,
-                        selected_common_key,
-                        new_alias,
-                    )
+                    for row in edited_variants:
+                        alias = str(row.get("Variant") or "").strip()
+                        normalized_alias = normalize_common_question(alias)
+
+                        if (
+                            not alias
+                            or normalized_alias
+                            == normalize_common_question(selected_common.label)
+                            or normalized_alias in seen
+                        ):
+                            continue
+
+                        seen.add(normalized_alias)
+                        cleaned_variants.append(alias)
+
+                    latest.setdefault(
+                        "common_answer_aliases",
+                        {}
+                    )[selected_common_key] = cleaned_variants
 
                     api(
                         "PUT",
@@ -851,9 +875,13 @@ with profile_tab:
                     )
 
                     st.success(
-                        f"Added wording to '{selected_common.label}'."
+                        f"Saved {len(cleaned_variants)} variant(s) for "
+                        f"'{selected_common.label}'."
                     )
                     st.rerun()
+
+                except RuntimeError as exc:
+                    st.error(str(exc))
 
         with st.expander("Add a custom repetitive question"):
             st.caption(

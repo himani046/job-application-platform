@@ -31,6 +31,7 @@ from backend.storage import normalize_question, remember_answer
 from backend.portals import get_adapter
 from backend.application_prepare import review_field, submission_blockers
 from backend.application_store import get_application, record_event
+from backend.common_answers import common_answer_for_question
 from backend.universal_form import answer_from_profile, build_field_spec
 from backend.dynamic_form import DynamicFormExecutor
 
@@ -1765,6 +1766,13 @@ class Engine:
 
         if label in profile.custom_answers:
             return profile.custom_answers[label]
+
+        common_answer = common_answer_for_question(
+            item["label"],
+            profile.custom_answers,
+        )
+        if common_answer is not None:
+            return common_answer
 
         question = compact(item["label"])
         metadata = compact(item["meta"])

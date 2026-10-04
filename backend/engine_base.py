@@ -275,7 +275,7 @@ FORM_SCRIPT = r"""
             );
 
             const explicitQuestion =
-                group?.querySelector("legend, [role="heading"], label")?.innerText ||
+                group?.querySelector('legend, [role="heading"], label')?.innerText ||
                 group?.getAttribute("aria-label") ||
                 group?.getAttribute("data-label") ||
                 "";

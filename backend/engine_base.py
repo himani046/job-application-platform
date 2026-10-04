@@ -1893,6 +1893,45 @@ class Engine:
 
         return None
 
+    async def focus_first_application_field(self, fields: list[dict]) -> bool:
+        """Focus the first editable application control when a step opens."""
+        for item in fields:
+            if item.get("filled") or item.get("kind") == "file":
+                continue
+            try:
+                locator = self.locator(item)
+                if self.dynamic_form:
+                    resolved, _strategy = await self.dynamic_form.resolve(item)
+                    if resolved is not None:
+                        locator = resolved
+                if await locator.count() and await locator.first.is_visible():
+                    target = locator.first
+                    await target.scroll_into_view_if_needed()
+                    await target.focus()
+                    if await target.evaluate("el => document.activeElement === el"):
+                        self.run.log(f"Focused first application field: {item['label']}")
+                        return True
+            except Exception:
+                continue
+        try:
+            scope = self.page.main_frame.locator(
+                'dialog:visible, [role="dialog"]:visible, main'
+            ).first
+            controls = scope.locator(
+                'input:not([type="hidden"]):not([type="submit"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role="combobox"]:not([aria-disabled="true"])'
+            )
+            for index in range(await controls.count()):
+                candidate = controls.nth(index)
+                if await candidate.is_visible():
+                    await candidate.scroll_into_view_if_needed()
+                    await candidate.focus()
+                    if await candidate.evaluate("el => document.activeElement === el"):
+                        self.run.log("Focused first application field using keyboard fallback.")
+                        return True
+        except Exception:
+            pass
+        return False
+
     async def _tab_to_field(self, item: dict) -> Locator | None:
         """Fallback for React/ATS controls whose generated IDs are unstable.
 
@@ -2744,6 +2783,7 @@ class Engine:
             fields = await self.fields()
             self.update_application_review(fields)
             self.sync_application("filling", "fields_detected", "Application fields detected and classified for review.")
+            await self.focus_first_application_field(fields)
 
             try:
                 if await self.upload_resumes(fields):

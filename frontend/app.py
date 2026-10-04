@@ -217,6 +217,90 @@ def live_console():
         if pending.get("explanation"):
             st.info(pending["explanation"])
 
+        if "answer_batch" == pending.get("reason") and "answer" in allowed:
+            batch_questions = pending.get("batch_questions", [])
+
+            if batch_questions:
+                st.subheader(
+                    f"Answer {len(batch_questions)} application questions"
+                )
+                st.caption(
+                    "Review the proposed answers below. All required questions "
+                    "must have a selection before the answers are submitted."
+                )
+
+                batch_answers = {}
+                batch_remember = {}
+
+                with st.form(f"batch-answer-form-{token}"):
+                    for index, question in enumerate(batch_questions):
+                        options = [
+                            str(option).strip()
+                            for option in question.get("options", [])
+                            if str(option).strip()
+                        ]
+                        suggestion = str(question.get("suggestion") or "").strip()
+
+                        if options:
+                            if suggestion in options:
+                                default_index = options.index(suggestion)
+                            else:
+                                default_index = None
+
+                            batch_answers[question["id"]] = st.radio(
+                                question.get("question", "Answer"),
+                                options=options,
+                                index=default_index,
+                                key=f"batch-choice-{token}-{index}",
+                            )
+                        else:
+                            batch_answers[question["id"]] = st.text_input(
+                                question.get("question", "Answer"),
+                                value=suggestion,
+                                key=f"batch-text-{token}-{index}",
+                            )
+
+                        batch_remember[question["id"]] = st.checkbox(
+                            "Remember this answer for this resume profile",
+                            key=f"batch-remember-{token}-{index}",
+                        )
+
+                    submitted = st.form_submit_button(
+                        "Submit all answers & resume",
+                        type="primary",
+                    )
+
+                if submitted:
+                    missing = [
+                        question["question"]
+                        for question in batch_questions
+                        if question.get("required")
+                        and not str(batch_answers.get(question["id"], "")).strip()
+                    ]
+
+                    if missing:
+                        st.error(
+                            "Please answer all required questions before continuing."
+                        )
+                    else:
+                        try:
+                            send_command(
+                                run_id,
+                                pending,
+                                "answer",
+                                answer=json.dumps(
+                                    {
+                                        "answers": batch_answers,
+                                        "remember": batch_remember,
+                                    }
+                                ),
+                            )
+                            st.rerun()
+                        except RuntimeError as exc:
+                            st.error(str(exc))
+
+            return
+
         if "answer" in allowed:
             options = [
                 option for option in pending.get("options", [])

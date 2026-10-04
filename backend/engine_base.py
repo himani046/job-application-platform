@@ -292,8 +292,40 @@ FORM_SCRIPT = r"""
             }
             seenRadioGroups.add(groupKey);
 
+            const optionLabelOf = radio => {
+                const id = radio.id || "";
+
+                if (id) {
+                    const labels = [...document.getElementsByTagName("label")];
+                    const linked = labels.find(label => label.htmlFor === id);
+                    if (linked) {
+                        const text = cleanQuestion(linked.innerText);
+                        if (text) return text;
+                    }
+                }
+
+                const wrapped = radio.closest("label");
+                if (wrapped) {
+                    const text = cleanQuestion(
+                        [...wrapped.childNodes]
+                            .filter(node => node !== radio)
+                            .map(node => node.textContent || "")
+                            .join(" ")
+                    );
+                    if (text) return text;
+                }
+
+                const sibling = radio.nextElementSibling;
+                if (sibling) {
+                    const text = cleanQuestion(sibling.innerText || sibling.textContent || "");
+                    if (text) return text;
+                }
+
+                return cleanQuestion(radio.value || "");
+            };
+
             const optionLabels = members
-                .map(item => labelOf(item))
+                .map(optionLabelOf)
                 .map(value => cleanQuestion(value))
                 .filter(Boolean);
 

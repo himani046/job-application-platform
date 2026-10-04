@@ -61,7 +61,16 @@ def get_record(profile_id: str) -> dict:
     path = profile_path(profile_id)
     if not path.exists():
         raise FileNotFoundError("Profile not found.")
-    return json.loads(path.read_text(encoding="utf-8"))
+
+    record = json.loads(path.read_text(encoding="utf-8"))
+
+    # Backfill fields introduced after older profiles were created so every
+    # API response and JSON editor sees the same current profile shape.
+    profile_data = record.setdefault("profile", {})
+    profile_data.setdefault("custom_answers", {})
+    profile_data.setdefault("common_answer_aliases", {})
+
+    return record
 
 def get_profile(profile_id: str) -> Profile:
     return Profile.model_validate(get_record(profile_id)["profile"])

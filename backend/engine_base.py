@@ -255,17 +255,64 @@ FORM_SCRIPT = r"""
                 )
                 : [el];
 
+            const group = el.closest(
+                'fieldset, [role="radiogroup"], ' +
+                '[data-automation-id^="formField"], ' +
+                '[data-test-form-element], .form-group, .field, ' +
+                '.application-question, [class*="form-field"], [class*="formField"]'
+            );
+
+            const optionLabels = new Set(
+                members
+                    .map(item => labelOf(item))
+                    .map(value => cleanQuestion(value).toLowerCase())
+                    .filter(Boolean)
+            );
+
+            const explicitQuestion =
+                group?.querySelector("legend, [role="heading"], label")?.innerText ||
+                group?.getAttribute("aria-label") ||
+                group?.getAttribute("data-label") ||
+                "";
+
+            const groupText = cleanQuestion(group?.innerText || "");
+
+            // Some ATS forms render radio buttons without a fieldset/legend.
+            // In that layout the useful question is usually the text immediately
+            // before the radio group. Never use the generated React id/name as
+            // the question because it produces useless prompts such as
+            // "radio-group-*r_1o*".
+            const previousText = [
+                el.closest("form")?.previousElementSibling?.innerText || "",
+                el.parentElement?.previousElementSibling?.innerText || "",
+                el.parentElement?.parentElement?.previousElementSibling?.innerText || ""
+            ]
+                .map(cleanQuestion)
+                .filter(Boolean)
+                .join(" ");
+
+            const stripOptions = value =>
+                cleanQuestion(value)
+                    .replace(/\b(?:yes|no|true|false|select|choose|optional)\b/gi, " ")
+                    .replace(/\s+/g, " ")
+                    .trim();
+
+            const questionCandidates = [
+                explicitQuestion,
+                stripOptions(groupText),
+                stripOptions(previousText),
+            ];
+
             const question = (
-                el.closest("fieldset")
-                    ?.querySelector("legend")?.innerText ||
-                el.closest('[role="radiogroup"]')
-                    ?.getAttribute("aria-label") ||
-                el.closest(
-                    '[data-automation-id^="formField"], ' +
-                    '.form-group, .field, .application-question'
-                )?.querySelector("label, legend")?.innerText ||
-                el.name ||
-                label
+                questionCandidates.find(value => {
+                    const normalized = cleanQuestion(value).toLowerCase();
+                    return (
+                        normalized &&
+                        !optionLabels.has(normalized) &&
+                        !/^radio-group-|^_r_[a-z0-9_]+$/i.test(normalized)
+                    );
+                }) ||
+                ""
             ).replace(/\s+/g, " ").trim();
 
             result.push({

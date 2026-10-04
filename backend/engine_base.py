@@ -416,7 +416,7 @@ FORM_SCRIPT = r"""
                 input_type: type,
                 filled: members.some(item => item.checked),
                 options: members.map(item => ({
-                    label: labelOf(item) || item.value || "Option",
+                    label: optionLabelOf(item) || item.value || "Option",
                     value: item.value,
                     key: mark(item)
                 })),
@@ -3002,7 +3002,8 @@ class Engine:
                     f"required={field.get('required')} | "
                     f"detected_filled={field.get('filled')} | "
                     f"live_filled={bool(live_value.strip())} | "
-                    f"semantic={field.get('semantic', 'unknown')}"
+                    f"semantic={field.get('semantic', 'unknown')} | "
+                    f"options={','.join(str(option.get('label', '')) for option in field.get('options', []))}"
                 )
 
             self.update_application_review(fields)

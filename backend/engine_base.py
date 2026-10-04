@@ -1893,6 +1893,86 @@ class Engine:
 
         return None
 
+    async def _tab_to_field(self, item: dict) -> Locator | None:
+        """Fallback for React/ATS controls whose generated IDs are unstable.
+
+        Start from the first visible form control in the active application
+        dialog and use real keyboard Tab navigation. This mirrors how a
+        candidate moves through these forms and avoids depending on generated
+        React IDs.
+        """
+        if not self.page:
+            return None
+
+        frame = item.get("frame") or self.page.main_frame
+        target_key = item.get("key")
+        target_label = compact(item.get("label", ""))
+
+        try:
+            scope = frame.locator(
+                'dialog:visible, [role="dialog"]:visible, '
+                'main'
+            ).first
+
+            controls = scope.locator(
+                'input:not([type="hidden"]):not([type="submit"]):not([disabled]), '
+                'textarea:not([disabled]), select:not([disabled]), '
+                '[role="combobox"]:not([aria-disabled="true"])'
+            )
+
+            count = await controls.count()
+            if count == 0:
+                return None
+
+            # Prefer the first visible editable control as the keyboard start.
+            start = None
+            for index in range(count):
+                candidate = controls.nth(index)
+                if await candidate.is_visible():
+                    start = candidate
+                    break
+
+            if start is None:
+                return None
+
+            await start.focus()
+
+            # Check the currently focused element and then walk forward.
+            for _ in range(min(count + 3, 40)):
+                focused = frame.locator(":focus")
+                if await focused.count():
+                    current = focused.first
+                    try:
+                        current_key = await current.get_attribute("data-job-agent-id")
+                        current_label = compact(
+                            await current.get_attribute("aria-label") or ""
+                        )
+                        current_name = compact(
+                            await current.get_attribute("name") or ""
+                        )
+
+                        if target_key and current_key == target_key:
+                            return current
+
+                        if target_label and (
+                            target_label == current_label
+                            or target_label == current_name
+                        ):
+                            return current
+                    except Exception:
+                        pass
+
+                await self.page.keyboard.press("Tab")
+                await asyncio.sleep(0.08)
+
+            return None
+        except Exception as exc:
+            self.run.log(
+                f"Keyboard field navigation failed: {type(exc).__name__}.",
+                "warning",
+            )
+            return None
+
     async def fill(self, item: dict, answer: str) -> bool:
         locator = self.locator(item)
         kind = item["kind"]
@@ -1981,14 +2061,38 @@ class Engine:
             ):
                 return False
 
-            await locator.fill(answer)
-            await locator.press("Tab")
+            try:
+                await locator.fill(answer)
+                await locator.press("Tab")
 
-            validity = await locator.evaluate(
-                "el => el.validity ? el.validity.valid : true"
-            )
+                validity = await locator.evaluate(
+                    "el => el.validity ? el.validity.valid : true"
+                )
 
-            return bool(validity)
+                if validity:
+                    return True
+            except Exception:
+                pass
+
+            # Fallback: use real keyboard Tab navigation when the field's
+            # generated locator is not interactable/reliable.
+            tab_locator = await self._tab_to_field(item)
+            if tab_locator is not None:
+                try:
+                    await tab_locator.fill(answer)
+                    await self.page.keyboard.press("Tab")
+                    validity = await tab_locator.evaluate(
+                        "el => el.validity ? el.validity.valid : true"
+                    )
+                    if validity:
+                        self.run.log(
+                            f"Filled via keyboard Tab navigation: {item['label']}"
+                        )
+                        return True
+                except Exception:
+                    pass
+
+            return False
 
         return False
 

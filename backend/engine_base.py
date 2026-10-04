@@ -328,18 +328,7 @@ FORM_SCRIPT = r"""
                 return index === 0 ? "Yes" : "No";
             });
 
-            const stripRadioOptions = value =>
-                cleanQuestion(value)
-                    .replace(/\byes\b/gi, " ")
-                    .replace(/\bno\b/gi, " ")
-                    .replace(
-                        /\b(?:this field is required|required|optional)\b/gi,
-                        " "
-                    )
-                    .replace(/\s+/g, " ")
-                    .trim();
-
-            const questionSources = [];
+            /* Question text is extracted from surrounding LinkedIn DOM. */
 
             const explicitQuestion =
                 group?.querySelector(

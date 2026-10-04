@@ -3085,6 +3085,13 @@ class Engine:
                         pass
 
                 await self.settle()
+
+                # LinkedIn reuses the same DOM nodes and data-job-agent-id
+                # values across Easy Apply pages. Those IDs are only valid
+                # for the current form step; retaining them in handled
+                # causes later pages to be incorrectly skipped.
+                self.handled.clear()
+
                 continue
 
             self.update_application_review(fields, errors)

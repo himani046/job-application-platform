@@ -31,6 +31,8 @@ SEMANTICS = {
     "state": (r"\bstate\b", r"\bprovince\b"),
     "country": (r"\bcountry\b",),
     "postal_code": (r"\bpostal\b", r"\bzip\s*code\b"),
+    "street": (r"\bstreet\b", r"\baddress\s*(?:line|1|one)?\b"),
+    "current_job_title": (r"\bcurrent\s+job\s+title\b", r"\bcurrent\s+title\b"),
     "degree": (
         r"\bdegree\b",
         r"\beducation\s+level\b",
@@ -84,6 +86,8 @@ def answer_from_profile(spec: FieldSpec, profile: Any) -> str | None:
         "email": p.email, "phone": p.phone, "linkedin": o.linkedin, "github": o.github,
         "portfolio": o.portfolio, "city": p.city, "state": p.state, "country": p.country,
         "postal_code": p.postal_code,
+        "street": p.street,
+        "current_job_title": next((job.title for job in profile.work_history if job.current and job.title), None) or (profile.work_history[0].title if profile.work_history else None),
         "years_experience": f"{profile.years_of_experience:g}" if profile.years_of_experience is not None else None,
         "notice_period": profile.ats_defaults.notice_period,
         "skills": ", ".join(

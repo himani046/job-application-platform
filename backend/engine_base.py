@@ -2108,20 +2108,47 @@ class Engine:
                 try:
                     await target.scroll_into_view_if_needed()
                     await target.click()
-                    await target.press("Control+A")
-                    await target.type(answer, delay=12)
 
-                    actual = (
-                        await target.input_value()
-                        if await target.evaluate(
-                            "el => 'value' in el"
-                        )
-                        else ""
+                    # LinkedIn uses React-controlled inputs. Set the native
+                    # value through the prototype setter and dispatch real
+                    # input/change events so React updates its controlled
+                    # state as if the candidate had typed the value.
+                    await target.evaluate(
+                        """(el, value) => {
+                            const proto = Object.getPrototypeOf(el);
+                            const descriptor =
+                                Object.getOwnPropertyDescriptor(proto, 'value') ||
+                                Object.getOwnPropertyDescriptor(
+                                    HTMLInputElement.prototype, 'value'
+                                ) ||
+                                Object.getOwnPropertyDescriptor(
+                                    HTMLTextAreaElement.prototype, 'value'
+                                );
+
+                            if (descriptor && descriptor.set) {
+                                descriptor.set.call(el, value);
+                            } else {
+                                el.value = value;
+                            }
+
+                            el.dispatchEvent(
+                                new Event('input', {bubbles: true})
+                            );
+                            el.dispatchEvent(
+                                new Event('change', {bubbles: true})
+                            );
+                        }""",
+                        answer,
                     )
 
-                    # React-controlled inputs can swallow a fill/type event.
-                    # Never report success until the candidate-visible value
-                    # actually contains the requested answer.
+                    actual = await target.input_value()
+
+                    if actual.strip() != answer.strip():
+                        # Last fallback: actual keyboard input.
+                        await target.press("Control+A")
+                        await target.type(answer, delay=12)
+                        actual = await target.input_value()
+
                     if actual.strip() != answer.strip():
                         return False
 

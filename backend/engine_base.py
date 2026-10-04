@@ -2355,11 +2355,22 @@ class Engine:
     async def answer_field(self, item: dict) -> bool:
         key = (item["frame"].url, item["key"])
 
-        if key in self.handled or item["filled"]:
+        if key in self.handled:
             return False
 
         if item["kind"] == "file":
             return False
+
+        # LinkedIn reuses React controls between Easy Apply pages, so the
+        # captured FORM_SCRIPT "filled" flag can be stale. Read the live DOM
+        # before deciding that a field is already complete.
+        if item.get("filled"):
+            try:
+                live_value = await self.read_field_value(item)
+                if live_value.strip():
+                    return False
+            except Exception:
+                pass
 
         review = review_field(item)
         if review["sensitive"]:
@@ -2920,15 +2931,24 @@ class Engine:
                 )
                 continue
 
+            # Re-scan the live application controls before clicking
+            # Next. Do not trust the earlier field snapshot for required
+            # values on LinkedIn's reused React components.
+            live_fields = await self.fields()
             unresolved_required = []
-            for field in fields:
+            for field in live_fields:
                 if not field.get("required") or field.get("kind") == "file":
                     continue
                 try:
                     value = await self.read_field_value(field)
                 except Exception:
                     value = ""
-                if not compact(value):
+                if not compact(value) or compact(value) in {
+                    "select",
+                    "select an option",
+                    "choose",
+                    "choose an option",
+                }:
                     unresolved_required.append(field)
 
             if unresolved_required:

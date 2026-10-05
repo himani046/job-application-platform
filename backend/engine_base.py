@@ -2306,6 +2306,288 @@ class Engine:
             option_value = str(option.get("value") or "").strip()
             frame = item["frame"]
 
+            async def verify_selected(target_label: str) -> bool:
+                """Verify the requested live option is actually selected."""
+                try:
+                    radios = frame.locator('input[type="radio"]')
+                    count = await radios.count()
+
+                    for index in range(count):
+                        radio = radios.nth(index)
+                        if not await radio.is_visible():
+                            continue
+
+                        if not await radio.is_checked():
+                            continue
+
+                        label_text = ""
+
+                        try:
+                            label_text = await radio.evaluate(
+                                """el => {
+                                    const clean = value =>
+                                        (value || '').replace(/\\s+/g, ' ').trim();
+                                    const id = el.id || '';
+                                    const linked = id
+                                        ? [...document.querySelectorAll('label')]
+                                            .find(label => label.htmlFor === id)
+                                        : null;
+                                    const wrapped = el.closest('label');
+                                    return clean(
+                                        linked?.innerText ||
+                                        wrapped?.innerText ||
+                                        el.nextElementSibling?.innerText ||
+                                        el.value ||
+                                        ''
+                                    );
+                                }"""
+                            )
+                        except Exception:
+                            pass
+
+                        if (
+                            compact(label_text).lower() == target_label.lower()
+                            or compact(radio.get_attribute("value") or "").lower()
+                            == target_label.lower()
+                        ):
+                            return True
+                except Exception:
+                    pass
+
+                return False
+
+            # First try the current live control locators.
+            async def live_radio_candidates():
+                radios = frame.locator('input[type="radio"]:visible')
+                count = await radios.count()
+                results = []
+                question_text = compact(item.get("label", "")).lower()
+
+                for index in range(count):
+                    radio = radios.nth(index)
+
+                    try:
+                        info = await radio.evaluate(
+                            """el => {
+                                const clean = value =>
+                                    (value || '').replace(/\\s+/g, ' ').trim();
+
+                                const id = el.id || '';
+                                const linked = id
+                                    ? [...document.querySelectorAll('label')]
+                                        .find(label => label.htmlFor === id)
+                                    : null;
+                                const wrapped = el.closest('label');
+
+                                const label = clean(
+                                    linked?.innerText ||
+                                    wrapped?.innerText ||
+                                    el.nextElementSibling?.innerText ||
+                                    el.value ||
+                                    ''
+                                );
+
+                                const ancestors = [];
+                                let cursor = el.parentElement;
+
+                                for (let depth = 0; cursor && depth < 8; depth++) {
+                                    const text = clean(cursor.innerText);
+                                    if (text) ancestors.push(text);
+                                    cursor = cursor.parentElement;
+                                }
+
+                                return {
+                                    label,
+                                    value: clean(el.value),
+                                    ancestors
+                                };
+                            }"""
+                        )
+                    except Exception:
+                        continue
+
+                    label = compact(info.get("label", "")).lower()
+                    value = compact(info.get("value", "")).lower()
+                    ancestors = [
+                        compact(text).lower()
+                        for text in info.get("ancestors", [])
+                    ]
+
+                    option_matches = (
+                        bool(option_label) and (
+                            label == option_label.lower()
+                            or option_label.lower() in label
+                        )
+                    ) or (
+                        bool(option_value) and
+                        value == option_value.lower()
+                    )
+
+                    question_matches = (
+                        not question_text
+                        or any(
+                            question_text in ancestor
+                            or ancestor in question_text
+                            for ancestor in ancestors
+                        )
+                    )
+
+                    if option_matches and question_matches:
+                        results.append(index)
+
+                return results
+
+            try:
+                candidates = await live_radio_candidates()
+
+                for radio_index in candidates:
+                    radio = frame.locator('input[type="radio"]').nth(radio_index)
+
+                    try:
+                        await radio.scroll_into_view_if_needed()
+                        await radio.check(force=True)
+                        await asyncio.sleep(0.15)
+
+                        if await radio.is_checked():
+                            self.run.log(
+                                f"Applied radio answer with direct control: "
+                                f"{item['label']} -> {option_label}"
+                            )
+                            return True
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+            # Keyboard fallback for LinkedIn's custom React radio controls.
+            # The native input may reject check()/click() even though its
+            # keyboard interaction is fully supported.
+            try:
+                radios = frame.locator('input[type="radio"]')
+                count = await radios.count()
+
+                for index in range(count):
+                    radio = radios.nth(index)
+
+                    try:
+                        info = await radio.evaluate(
+                            """el => {
+                                const clean = value =>
+                                    (value || '').replace(/\\s+/g, ' ').trim();
+
+                                const id = el.id || '';
+                                const linked = id
+                                    ? [...document.querySelectorAll('label')]
+                                        .find(label => label.htmlFor === id)
+                                    : null;
+                                const wrapped = el.closest('label');
+
+                                const label = clean(
+                                    linked?.innerText ||
+                                    wrapped?.innerText ||
+                                    el.nextElementSibling?.innerText ||
+                                    el.value ||
+                                    ''
+                                );
+
+                                const ancestors = [];
+                                let cursor = el.parentElement;
+
+                                for (let depth = 0; cursor && depth < 8; depth++) {
+                                    const text = clean(cursor.innerText);
+                                    if (text) ancestors.push(text);
+                                    cursor = cursor.parentElement;
+                                }
+
+                                return {
+                                    label,
+                                    value: clean(el.value),
+                                    ancestors,
+                                    disabled: el.disabled
+                                };
+                            }"""
+                        )
+                    except Exception:
+                        continue
+
+                    if info.get("disabled"):
+                        continue
+
+                    label = compact(info.get("label", ""))
+                    value = compact(info.get("value", ""))
+
+                    if not (
+                        label.lower() == option_label.lower()
+                        or option_label.lower() in label.lower()
+                        or (
+                            option_value and
+                            value.lower() == option_value.lower()
+                        )
+                    ):
+                        continue
+
+                    self.run.log(
+                        f"Trying keyboard radio selection: "
+                        f"{item['label']} -> {option_label}"
+                    )
+
+                    # Focus the native radio and use the browser keyboard.
+                    # Space activates radio controls; Tab is used as a
+                    # fallback when LinkedIn moves focus to its custom wrapper.
+                    await radio.scroll_into_view_if_needed()
+                    await radio.focus()
+                    await asyncio.sleep(0.1)
+
+                    try:
+                        await radio.press("Space")
+                    except Exception:
+                        await self.page.keyboard.press("Space")
+
+                    await asyncio.sleep(0.2)
+
+                    if await radio.is_checked():
+                        self.run.log(
+                            f"Applied radio answer with keyboard: "
+                            f"{item['label']} -> {option_label}"
+                        )
+                        return True
+
+                    # One Tab + Space retry handles LinkedIn wrappers where
+                    # focus lands on the visible option after the native input.
+                    try:
+                        await self.page.keyboard.press("Tab")
+                        await self.page.keyboard.press("Space")
+                        await asyncio.sleep(0.2)
+                    except Exception:
+                        pass
+
+                    if await radio.is_checked():
+                        self.run.log(
+                            f"Applied radio answer with Tab + Space: "
+                            f"{item['label']} -> {option_label}"
+                        )
+                        return True
+
+                    if await verify_selected(option_label):
+                        self.run.log(
+                            f"Verified radio answer after keyboard fallback: "
+                            f"{item['label']} -> {option_label}"
+                        )
+                        return True
+
+            except Exception as exc:
+                self.run.log(
+                    f"Keyboard radio fallback failed: "
+                    f"{type(exc).__name__}: {exc}",
+                    "warning",
+                )
+
+            return False
+
+            option_label = str(option.get("label") or "").strip()
+            option_value = str(option.get("value") or "").strip()
+            frame = item["frame"]
+
             # First try the current live controls, not the generated IDs that
             # may have become stale while the frontend was answering.
             async def live_matches():

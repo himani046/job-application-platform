@@ -2303,6 +2303,159 @@ class Engine:
                 return False
 
             option_label = str(option.get("label") or "").strip()
+            frame = item["frame"]
+            question_text = compact(item.get("label", ""))
+
+            if not option_label:
+                return False
+
+            def same_question(value: str) -> bool:
+                left = compact(value).rstrip("*").lower()
+                right = question_text.rstrip("*").lower()
+                return bool(right) and (
+                    left == right
+                    or right in left
+                    or left in right
+                )
+
+            # LinkedIn's custom control makes the OUTER [role=radio] div
+            # the actual keyboard/click target. The nested native input has
+            # an empty <label>, while the option text lives in a <p>.
+            try:
+                radios = frame.locator(
+                    '[role="radiogroup"] [role="radio"]'
+                )
+
+                count = await radios.count()
+
+                for index in range(count):
+                    radio = radios.nth(index)
+
+                    try:
+                        if not await radio.is_visible():
+                            continue
+
+                        aria_label = compact(
+                            await radio.get_attribute("aria-label") or ""
+                        )
+
+                        if not same_question(aria_label):
+                            continue
+
+                        rendered_text = compact(
+                            await radio.inner_text()
+                        )
+
+                        # Each LinkedIn radio contains only its option text
+                        # ("Yes" or "No"), while aria-label contains the
+                        # question. Match both pieces before interacting.
+                        if rendered_text.lower() != option_label.lower():
+                            continue
+
+                        await radio.scroll_into_view_if_needed()
+                        await radio.focus()
+                        await asyncio.sleep(0.05)
+
+                        # The outer role=radio supports native keyboard
+                        # activation even though the nested input's label is
+                        # empty.
+                        await radio.press("Space")
+                        await asyncio.sleep(0.2)
+
+                        if (
+                            await radio.get_attribute("aria-checked")
+                        ) == "true":
+                            self.run.log(
+                                f"Applied LinkedIn radio with Space: "
+                                f"{question_text} -> {option_label}"
+                            )
+                            return True
+
+                        # Some React renders require a click on the actual
+                        # role=radio wrapper after keyboard activation fails.
+                        await radio.click(force=True)
+                        await asyncio.sleep(0.2)
+
+                        if (
+                            await radio.get_attribute("aria-checked")
+                        ) == "true":
+                            self.run.log(
+                                f"Applied LinkedIn radio with role=radio click: "
+                                f"{question_text} -> {option_label}"
+                            )
+                            return True
+
+                    except Exception:
+                        continue
+
+            except Exception as exc:
+                self.run.log(
+                    f"LinkedIn role=radio interaction failed: "
+                    f"{type(exc).__name__}: {exc}",
+                    "warning",
+                )
+
+            # Fallback for layouts that expose role=radio without the
+            # radiogroup wrapper.
+            try:
+                radios = frame.locator('[role="radio"]')
+                count = await radios.count()
+
+                for index in range(count):
+                    radio = radios.nth(index)
+
+                    try:
+                        if not await radio.is_visible():
+                            continue
+
+                        aria_label = compact(
+                            await radio.get_attribute("aria-label") or ""
+                        )
+
+                        if not same_question(aria_label):
+                            continue
+
+                        rendered_text = compact(
+                            await radio.inner_text()
+                        )
+
+                        if rendered_text.lower() != option_label.lower():
+                            continue
+
+                        await radio.focus()
+                        await radio.press("Space")
+                        await asyncio.sleep(0.2)
+
+                        if (
+                            await radio.get_attribute("aria-checked")
+                        ) == "true":
+                            self.run.log(
+                                f"Applied LinkedIn radio with fallback Space: "
+                                f"{question_text} -> {option_label}"
+                            )
+                            return True
+
+                        await radio.click(force=True)
+                        await asyncio.sleep(0.2)
+
+                        if (
+                            await radio.get_attribute("aria-checked")
+                        ) == "true":
+                            self.run.log(
+                                f"Applied LinkedIn radio with fallback click: "
+                                f"{question_text} -> {option_label}"
+                            )
+                            return True
+
+                    except Exception:
+                        continue
+
+            except Exception:
+                pass
+
+            return False
+
+            option_label = str(option.get("label") or "").strip()
             option_value = str(option.get("value") or "").strip()
             question_text = compact(item.get("label", ""))
             frame = item["frame"]

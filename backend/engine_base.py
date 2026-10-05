@@ -2768,7 +2768,31 @@ class Engine:
                 pass
 
         review = review_field(item)
-        if review["sensitive"]:
+
+        # Explicitly saved profile answers are candidate-provided facts. They
+        # must be resolved before the generic sensitive-question gate so the
+        # reusable application-answer library can fill repetitive fields such
+        # as Current CTC and Expected CTC.
+        explicit_answer = self.known_answer(item)
+        if explicit_answer is None:
+            explicit_answer = common_answer_for_question(
+                item["label"],
+                self.profile.custom_answers,
+                self.profile.common_answer_aliases,
+            )
+
+        auto_allowed_sensitive = (
+            review["sensitive"]
+            and explicit_answer is not None
+            and review["category"] not in {
+                "work_authorization",
+                "citizenship",
+                "legal",
+                "demographic",
+            }
+        )
+
+        if review["sensitive"] and not auto_allowed_sensitive:
             self.sync_application("review", "sensitive_question", f"Sensitive field requires candidate review: {item['label']}.")
             options = [option["label"] for option in item["options"]]
             previous_value = await self.read_field_value(item)
@@ -2803,7 +2827,7 @@ class Engine:
             return True
 
         spec = build_field_spec(item)
-        answer = self.known_answer(item)
+        answer = explicit_answer
         if answer is None:
             answer = answer_from_profile(spec, self.profile)
 

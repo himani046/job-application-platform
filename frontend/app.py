@@ -703,6 +703,28 @@ except RuntimeError as exc:
     st.info("Start the backend and check the API token.")
     st.stop()
 
+# Lightweight command-center summary. Keep this read-only so it never interferes
+# with run state or application controls.
+try:
+    _application_records = api("GET", "/applications")
+    _submitted_count = sum(
+        1 for item in _application_records
+        if item.get("status") in {"submitted", "applied"}
+    )
+    _active_run = bool(st.session_state.get("run_id"))
+except RuntimeError:
+    _application_records = []
+    _submitted_count = 0
+    _active_run = bool(st.session_state.get("run_id"))
+
+st.markdown('<div class="section-label">At a glance</div>', unsafe_allow_html=True)
+_summary = st.columns(4)
+_summary[0].metric("Resume profiles", len(profiles))
+_summary[1].metric("Applications", len(_application_records))
+_summary[2].metric("Submitted", _submitted_count)
+_summary[3].metric("Workspace", "Run active" if _active_run else "Ready")
+st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
 profile_tab, automation_tab = st.tabs(
     ["Resume & profile", "Browser automation"]
 )

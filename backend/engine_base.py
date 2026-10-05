@@ -3423,6 +3423,142 @@ class Engine:
 
         return False
 
+    async def linkedin_resume_picker_present(self) -> bool:
+        """Detect LinkedIn's dedicated existing-resume selection page."""
+        if self.run.request.portal != "linkedin":
+            return False
+
+        try:
+            dialogs = self.page.locator(
+                'dialog:visible, [role="dialog"]:visible'
+            )
+
+            for index in range(await dialogs.count()):
+                dialog = dialogs.nth(index)
+                if not await dialog.is_visible():
+                    continue
+
+                text = re.sub(
+                    r"\s+",
+                    " ",
+                    (await dialog.inner_text()).strip(),
+                )
+
+                if re.search(
+                    r"select or upload a resume|resume.*less than 2mb",
+                    text,
+                    re.I,
+                ):
+                    return True
+        except Exception:
+            pass
+
+        return False
+
+    async def handle_linkedin_resume_picker(self) -> bool:
+        """Handle resume selection without sending resume cards to QA."""
+        if not await self.linkedin_resume_picker_present():
+            return False
+
+        frame = self.page.main_frame
+
+        try:
+            radios = frame.locator(
+                'dialog:visible input[type="radio"], '
+                '[role="dialog"]:visible input[type="radio"]'
+            )
+
+            count = await radios.count()
+
+            # LinkedIn normally preselects the current saved resume. Keep it.
+            for index in range(count):
+                radio = radios.nth(index)
+
+                if not await radio.is_visible():
+                    continue
+
+                if await radio.is_checked():
+                    self.run.log(
+                        "LinkedIn resume picker detected; an existing resume "
+                        "is already selected. Keeping the selected resume."
+                    )
+                    return True
+
+            # If nothing is selected, try to select the current profile
+            # resume by its visible filename.
+            resume_name = self.resume_path.name if self.resume_path else ""
+            if resume_name:
+                stem = Path(resume_name).stem
+
+                if stem:
+                    candidates = frame.get_by_text(
+                        re.escape(stem),
+                        exact=False,
+                    )
+
+                    for index in range(await candidates.count()):
+                        candidate = candidates.nth(index)
+
+                        if not await candidate.is_visible():
+                            continue
+
+                        try:
+                            await candidate.click()
+                            await asyncio.sleep(0.2)
+                        except Exception:
+                            continue
+
+                        for radio_index in range(await radios.count()):
+                            radio = radios.nth(radio_index)
+
+                            if await radio.is_visible() and await radio.is_checked():
+                                self.run.log(
+                                    "LinkedIn selected the saved profile resume: "
+                                    f"{resume_name}"
+                                )
+                                return True
+
+            # As a last resort, use a visible file input to attach the exact
+            # resume selected for this application.
+            file_inputs = frame.locator(
+                'dialog:visible input[type="file"], '
+                '[role="dialog"]:visible input[type="file"]'
+            )
+
+            for index in range(await file_inputs.count()):
+                control = file_inputs.nth(index)
+
+                if not await control.is_visible():
+                    continue
+
+                try:
+                    await control.set_input_files(str(self.resume_path))
+                    await asyncio.sleep(0.5)
+                    self.run.log(
+                        f"Attached profile resume from resume picker: {self.resume_path.name}"
+                    )
+                    return True
+                except Exception:
+                    continue
+
+        except Exception as exc:
+            self.run.log(
+                f"LinkedIn resume picker handling failed: "
+                f"{type(exc).__name__}: {exc}",
+                "warning",
+            )
+
+        await self.run.pause(
+            "resume_selection",
+            (
+                "LinkedIn is asking which resume to use, but no resume was "
+                "selected automatically. Select the intended resume in the "
+                "browser, then Resume."
+            ),
+            ["resume"],
+        )
+        return True
+
     async def apply(self) -> None:
         self.sync_application("opening", "opening", "Opening the job page for application preparation.")
         if self.profile is None or self.resume_path is None:
@@ -3467,6 +3603,19 @@ class Engine:
                 if not await self.linkedin_application_scope_ready():
                     self.linkedin_easy_apply_open = False
                     continue
+
+                # Resume selection is a dedicated LinkedIn page, not a
+                # multiple-choice application question. Handle it before
+                # invoking the generic form analyzer.
+                if await self.handle_linkedin_resume_picker():
+                    next_button = await self.find_linkedin_next_button()
+                    if next_button:
+                        self.run.log(
+                            "LinkedIn resume picker handled; advancing with Next."
+                        )
+                        await self.locator(next_button).click()
+                        await self.settle()
+                        continue
 
             self.run.log(
                 f"Inspecting application step {step}."

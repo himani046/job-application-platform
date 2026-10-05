@@ -1362,7 +1362,11 @@ def browser_request(
                     for image_path in attachment_paths:
                         upload_image_document(page, image_path)
 
-                    expected_previews = len(attachment_paths)
+                    # Native uploads are already verified by
+                    # upload_image_document(). Do not require an <img> preview
+                    # in send_prompt(), because ChatGPT may render attachments
+                    # as chips instead of image elements.
+                    expected_previews = None
 
                 else:
                     document_paths = attachment_paths

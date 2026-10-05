@@ -5,7 +5,7 @@ import path from "path";
 export default defineConfig(({ mode }) => {
   // Read the backend .env from the project root. The token is used only by
   // Vite's local development proxy and is never bundled into the React app.
-  const env = loadEnv(mode, path.resolve(__dirname, ".."), "");
+  const env = loadEnv(mode, path.resolve(process.cwd(), ".."), "");
 
   return {
     plugins: [react()],

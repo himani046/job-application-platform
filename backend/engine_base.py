@@ -2226,69 +2226,155 @@ class Engine:
 
             option_label = str(option.get("label") or "").strip()
             option_value = str(option.get("value") or "").strip()
+            frame = item["frame"]
 
-            candidates = [
-                item["frame"].locator(
-                    f'[data-job-agent-id="{option["key"]}"]'
-                ),
-            ]
+            # First try the current live controls, not the generated IDs that
+            # may have become stale while the frontend was answering.
+            async def live_matches():
+                radios = frame.locator('input[type="radio"]:visible')
+                count = await radios.count()
 
-            if option_value:
-                candidates.append(
-                    item["frame"].locator(
-                        f'input[type="radio"][value="{option_value}"]'
+                matches = []
+                question_text = compact(item.get("label", "")).lower()
+
+                for index in range(count):
+                    radio = radios.nth(index)
+
+                    try:
+                        info = await radio.evaluate(
+                            """el => {
+                                const clean = value =>
+                                    (value || '').replace(/\s+/g, ' ').trim();
+
+                                const id = el.id || '';
+                                const linked = id
+                                    ? [...document.querySelectorAll('label')]
+                                        .find(label => label.htmlFor === id)
+                                    : null;
+
+                                const wrapped = el.closest('label');
+
+                                let label = linked
+                                    ? clean(linked.innerText)
+                                    : wrapped
+                                    ? clean(
+                                        [...wrapped.childNodes]
+                                            .filter(node => node !== el)
+                                            .map(node => node.textContent || '')
+                                            .join(' ')
+                                    )
+                                    : clean(
+                                        el.nextElementSibling?.innerText ||
+                                        el.nextElementSibling?.textContent ||
+                                        ''
+                                    );
+
+                                const parent = el.parentElement;
+                                const ancestors = [];
+                                let cursor = parent;
+
+                                for (let depth = 0; cursor && depth < 6; depth++) {
+                                    const text = clean(cursor.innerText);
+                                    if (text) ancestors.push(text);
+                                    cursor = cursor.parentElement;
+                                }
+
+                                return {
+                                    index: el.__jobAgentIndex,
+                                    label,
+                                    value: clean(el.value),
+                                    ancestors
+                                };
+                            }"""
+                        )
+                    except Exception:
+                        continue
+
+                    label = compact(info.get("label", "")).lower()
+                    value = compact(info.get("value", "")).lower()
+                    ancestors = [
+                        compact(text).lower()
+                        for text in info.get("ancestors", [])
+                    ]
+
+                    option_matches = (
+                        (option_label and label == option_label.lower())
+                        or (option_label and option_label.lower() in label)
+                        or (option_value and value == option_value.lower())
                     )
-                )
 
-            if option_label:
-                candidates.append(
-                    item["frame"].get_by_label(
-                        option_label,
-                        exact=True,
+                    question_matches = (
+                        not question_text
+                        or any(
+                            question_text in ancestor
+                            or ancestor in question_text
+                            for ancestor in ancestors
+                        )
                     )
-                )
 
-            for candidate_locator in candidates:
+                    if option_matches and question_matches:
+                        matches.append(index)
+
+                return matches
+
+            # Attach stable indexes only for this live scan.
+            try:
+                await frame.locator('input[type="radio"]').evaluate_all(
+                    "(els) => els.forEach((el, i) => { el.__jobAgentIndex = i; })"
+                )
+            except Exception:
+                pass
+
+            live_indexes = await live_matches()
+
+            if not live_indexes:
+                # Fall back to exact option labels across the live radio set.
                 try:
-                    count = await candidate_locator.count()
+                    all_radios = frame.locator('input[type="radio"]:visible')
+                    count = await all_radios.count()
+
                     for index in range(count):
-                        candidate = candidate_locator.nth(index)
-                        if not await candidate.is_visible():
+                        radio = all_radios.nth(index)
+                        try:
+                            label_text = await radio.evaluate(
+                                """el => {
+                                    const clean = value =>
+                                        (value || '').replace(/\s+/g, ' ').trim();
+                                    const id = el.id || '';
+                                    const linked = id
+                                        ? [...document.querySelectorAll('label')]
+                                            .find(label => label.htmlFor === id)
+                                        : null;
+                                    const wrapped = el.closest('label');
+                                    return clean(
+                                        linked?.innerText ||
+                                        wrapped?.innerText ||
+                                        el.nextElementSibling?.innerText ||
+                                        el.value ||
+                                        ''
+                                    );
+                                }"""
+                            )
+                        except Exception:
                             continue
 
-                        await candidate.scroll_into_view_if_needed()
+                        if compact(label_text).lower() == option_label.lower():
+                            live_indexes.append(index)
+                except Exception:
+                    pass
 
-                        # get_by_label may resolve to a wrapping label rather
-                        # than the input, while the native input supports
-                        # check() reliably.
-                        tag = await candidate.evaluate(
-                            "el => el.tagName.toLowerCase()"
+            for radio_index in live_indexes:
+                try:
+                    radio = frame.locator('input[type="radio"]').nth(radio_index)
+                    await radio.scroll_into_view_if_needed()
+                    await radio.check(force=True)
+                    await asyncio.sleep(0.15)
+
+                    if await radio.is_checked():
+                        self.run.log(
+                            f"Applied live radio answer: {item['label']} -> {option_label}"
                         )
-
-                        if tag == "input":
-                            await candidate.check()
-                        else:
-                            await candidate.click()
-
-                        await asyncio.sleep(0.15)
-
-                        if tag == "input":
-                            checked = await candidate.is_checked()
-                        else:
-                            checked = bool(
-                                await candidate.evaluate(
-                                    "el => el.querySelector('input[type=radio]')?.checked || "
-                                    "el.matches('input[type=radio]:checked')"
-                                )
-                            )
-
-                        if not checked and option_value:
-                            checked = await item["frame"].locator(
-                                f'input[type="radio"][value="{option_value}"]:checked'
-                            ).count() > 0
-
-                        if checked:
-                            return True
+                        return True
                 except Exception:
                     continue
 

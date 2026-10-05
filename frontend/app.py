@@ -234,6 +234,42 @@ hr {
   padding: 12px 15px;
   font-size: .88rem;
 }
+ 
+/* ---------- Workflow surfaces ---------- */
+.workflow-header {
+  display:flex; justify-content:space-between; align-items:flex-start;
+  gap:20px; padding:20px 22px; background:#fff; border:1px solid #e5e7eb;
+  border-radius:16px; margin:8px 0 18px; box-shadow:0 4px 16px rgba(15,23,42,.04);
+}
+.workflow-title {font-size:1.25rem;font-weight:750;color:#111827;margin:0;}
+.workflow-meta {color:#6b7280;font-size:.82rem;margin-top:5px;}
+.workflow-state {padding:7px 11px;border-radius:999px;font-size:.76rem;font-weight:700;white-space:nowrap;}
+.workflow-state.running {background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;}
+.workflow-state.waiting {background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;}
+.workflow-state.done {background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;}
+.workflow-state.error {background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;}
+.action-panel {
+  background:#fff; border:1px solid #f0c36a; border-left:4px solid #f59e0b;
+  border-radius:14px; padding:20px 22px; margin:12px 0 18px;
+  box-shadow:0 8px 24px rgba(180,83,9,.06);
+}
+.action-kicker {font-size:.68rem;text-transform:uppercase;letter-spacing:.12em;color:#b45309;font-weight:800;}
+.action-title {font-size:1.12rem;font-weight:750;color:#111827;margin:4px 0 4px;}
+.action-copy {font-size:.86rem;color:#6b7280;margin-bottom:14px;}
+.question-card {
+  background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;
+  padding:16px 18px;margin:10px 0;
+}
+.question-number {font-size:.7rem;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.08em;}
+.question-text {font-size:.94rem;color:#0f172a;font-weight:650;margin-top:4px;}
+.job-card {
+  background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:18px 20px;
+  margin:8px 0; box-shadow:0 3px 12px rgba(15,23,42,.035);
+}
+.job-title {font-size:1rem;font-weight:720;color:#111827;}
+.job-company {font-size:.84rem;color:#64748b;margin-top:3px;}
+.job-chip {display:inline-block;padding:4px 8px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:.7rem;font-weight:650;margin:10px 5px 0 0;}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -340,12 +376,9 @@ def live_console():
 
     request = run["request"]
 
-    st.subheader("Live browser console")
-    st.write(
-        f"**Run:** `{run['id']}`  \n"
-        f"**Status:** `{run['status']}`  \n"
-        f"**Mode:** `{request['mode']}`"
-    )
+    state_class = "waiting" if run["status"] == "waiting" else "done" if run["status"] in {"completed", "success"} else "error" if run["status"] in {"failed", "error"} else "running"
+    state_label = str(run["status"]).replace("_", " ").title()
+    st.markdown(f"""<div class="workflow-header"><div><div class="workflow-title">Automation session</div><div class="workflow-meta">Run {run["id"][:12]} · {request["mode"].title()} · {PORTALS.get(request.get("portal"), request.get("portal", "Portal"))}</div></div><div class="workflow-state {state_class}">{state_label}</div></div>""", unsafe_allow_html=True)
 
     if request["mode"] == "discover":
         st.write(
@@ -370,7 +403,7 @@ def live_console():
     pending = run["pending"]
 
     if pending and not pending.get("claimed"):
-        st.warning(pending["message"])
+        st.markdown(f"""<div class="action-panel"><div class="action-kicker">Your attention is needed</div><div class="action-title">{pending.get("question") or pending.get("message") or "Review the next application step"}</div><div class="action-copy">The browser is paused safely. Complete this step below and the automation will continue.</div></div>""", unsafe_allow_html=True)
 
         if pending.get("url"):
             st.code(pending["url"], language=None)
@@ -391,15 +424,9 @@ def live_console():
         }
 
         if browser_only:
-            st.warning(
-                "This step requires a browser action. Answerable application "
-                "questions should be handled here in the frontend."
-            )
+            st.info("This step needs a browser action. Keep the browser visible, complete the requested action, then return here.")
         else:
-            st.error(
-                "🔴 Action required — answer this application step here. "
-                "The browser is paused until you respond."
-            )
+            st.markdown("<div class=\"live-banner\">Answer the application question below. Your browser will remain paused until you submit.</div>", unsafe_allow_html=True)
 
         if pending.get("category"):
             st.caption(f"Category: {pending['category']}")
@@ -421,13 +448,7 @@ def live_console():
             batch_questions = pending.get("batch_questions", [])
 
             if batch_questions:
-                st.subheader(
-                    f"Answer {len(batch_questions)} application questions"
-                )
-                st.caption(
-                    "Review the proposed answers below. All required questions "
-                    "must have a selection before the answers are submitted."
-                )
+                st.markdown(f"""<div class="action-panel" style="border-left-color:#2563eb;border-color:#bfdbfe;"><div class="action-kicker" style="color:#2563eb;">Application review</div><div class="action-title">{len(batch_questions)} questions are ready</div><div class="action-copy">Review every proposed answer. Required questions must be completed before the browser can continue.</div></div>""", unsafe_allow_html=True)
 
                 batch_answers = {}
                 batch_remember = {}

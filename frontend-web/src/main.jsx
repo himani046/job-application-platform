@@ -30,3 +30,5 @@ function Intervention({run,cmd}){const p=run.pending||{},[answer,setAnswer]=useS
 function Settings({close}){const[b,setB]=useState(BASE()),[t,setT]=useState(TOKEN());return <div className="modal-bg"><div className="modal"><div className="modal-head"><div><small>WORKSPACE</small><h3>Connection settings</h3></div><button className="icon" onClick={close}><X size={17}/></button></div><label>Backend URL<input value={b} onChange={e=>setB(e.target.value)}/></label><label>API token<input type="password" value={t} onChange={e=>setT(e.target.value)}/></label><div className="modal-actions"><Btn onClick={close}>Cancel</Btn><Btn primary onClick={()=>{localStorage.setItem("jobflow_api_base",b.replace(/\/$/,""));sessionStorage.setItem("jobflow_api_token",t);close();window.location.reload()}}>Save connection</Btn></div></div></div>}
 function Skeleton(){return <div className="skeleton"><div/><div className="skrow">{[1,2,3,4].map(i=><i key={i}/>)}</div><section/></div>}
 export default App;
+
+createRoot(document.getElementById("root")).render(<App />);

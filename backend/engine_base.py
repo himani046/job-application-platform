@@ -2581,16 +2581,52 @@ class Engine:
             answer = str(answers.get(key) or "").strip()
             if not answer:
                 if item.get("required"):
-                    self.run.log(
+                    await self.run.pause(
+                        "answer",
                         f"Required batch answer was empty: {item['label']}",
-                        "warning",
+                        ["resume"],
+                        question=item["label"],
+                        options=[
+                            option["label"]
+                            for option in item.get("options", [])
+                        ],
+                        required=True,
                     )
+                    return True
                 continue
 
             if await self.fill(item, answer):
+                # Force a live read after the interaction so the frontend
+                # response is not treated as success until the browser state
+                # actually changed.
+                await asyncio.sleep(0.15)
+                live_value = await self.read_field_value(item)
+
+                if not compact(live_value):
+                    await self.run.pause(
+                        "answer",
+                        (
+                            f"The browser did not retain the selected answer "
+                            f"for '{item['label']}'."
+                        ),
+                        ["resume"],
+                        question=item["label"],
+                        options=[
+                            option["label"]
+                            for option in item.get("options", [])
+                        ],
+                        required=item.get("required", False),
+                        explanation=(
+                            "The frontend response was received, but the "
+                            "browser control did not reflect that selection. "
+                            "Complete it in the browser, then Resume."
+                        ),
+                    )
+                    return True
+
                 self.handled.add((item["frame"].url, key))
                 self.run.log(
-                    f"Filled batch answer: {item['label']}"
+                    f"Filled and verified batch answer: {item['label']}"
                 )
 
                 if remembers.get(key) and self.run.request.profile_id:
@@ -2621,6 +2657,7 @@ class Engine:
                 )
                 return True
 
+        await self.settle()
         return True
 
     async def answer_field(self, item: dict) -> bool:
@@ -3190,6 +3227,23 @@ class Engine:
 
                 changed = False
 
+                # IMPORTANT: fill this step from top to bottom before asking
+                # the frontend about unresolved multiple-choice questions.
+                # A page may contain several later radio questions plus
+                # earlier text/number/date fields; pausing for the radio batch
+                # first used to leave those earlier fields empty in the browser.
+                for item in fields:
+                    if item.get("kind") in {"radio", "checkbox"}:
+                        continue
+
+                    if await self.answer_field(item):
+                        changed = True
+                        break
+
+                if changed:
+                    continue
+
+                # Now resolve already-known choices automatically.
                 unresolved_choices = [
                     item
                     for item in fields
@@ -3198,9 +3252,6 @@ class Engine:
                     and (item["frame"].url, item["key"]) not in self.handled
                 ]
 
-                # Automatically resolve choice questions for which the
-                # profile/custom-answer store already contains a verified
-                # answer. Only unresolved questions go to the frontend batch.
                 remaining_choices = []
                 for item in unresolved_choices:
                     answer = self.known_answer(item)
@@ -3219,7 +3270,7 @@ class Engine:
                 if len(remaining_choices) > 1:
                     changed = await self.answer_choice_batch(remaining_choices)
                 else:
-                    for item in fields:
+                    for item in remaining_choices:
                         if await self.answer_field(item):
                             changed = True
                             break

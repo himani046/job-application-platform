@@ -646,7 +646,8 @@ def live_console():
         st.info("Your response is being processed.")
 
     if run["results"]:
-        st.subheader("Discovered jobs")
+        st.markdown('<div class="section-label">Discovery results</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="workflow-title">Matched jobs <span class="small-muted">· {len(run["results"])} results</span></div>', unsafe_allow_html=True)
 
         st.dataframe(
             run["results"],
@@ -751,7 +752,9 @@ profile_tab, automation_tab = st.tabs(
 )
 
 with profile_tab:
-    st.subheader("Upload a resume")
+    st.markdown('<div class="section-label">Candidate workspace</div>', unsafe_allow_html=True)
+    st.markdown('<div class="workflow-title">Resume & profile</div>', unsafe_allow_html=True)
+    st.caption("Maintain the candidate profile the automation uses when preparing applications.")
 
     st.info(
         "The browser parser sends resume pages or documents to the "
@@ -1269,7 +1272,9 @@ with profile_tab:
         st.info("Upload a resume to create a profile.")
 
 with automation_tab:
-    st.subheader("Browser run configuration")
+    st.markdown('<div class="section-label">Automation</div>', unsafe_allow_html=True)
+    st.markdown('<div class="workflow-title">Start an automation run</div>', unsafe_allow_html=True)
+    st.caption("Choose a portal and action. The browser remains visible whenever verification or human input is required.")
 
     portal = st.selectbox(
         "Portal",
@@ -1454,7 +1459,8 @@ with automation_tab:
     live_console()
 
     st.divider()
-    st.subheader("Operations")
+    st.markdown('<div class="section-label">Operations</div>', unsafe_allow_html=True)
+    st.markdown('<div class="workflow-title">Queue & activity</div>', unsafe_allow_html=True)
     try:
         operations = api("GET", "/queue")
         q = operations["queue"]

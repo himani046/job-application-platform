@@ -280,19 +280,44 @@ FORM_SCRIPT = r"""
             // use DOM order and pair adjacent radios. This creates one field
             // per question instead of one field for the whole page.
             if (!group && visibleRadios.length >= 2) {
-                const allBinary = visibleRadios.every(radio => {
-                    const value = cleanQuestion(radio.value || "");
-                    const aria = cleanQuestion(
-                        radio.getAttribute("aria-label") || ""
-                    );
+                const radioChoiceText = radio => {
+                    const id = radio.id || "";
 
-                    return (
-                        /^yes$/i.test(value) ||
-                        /^no$/i.test(value) ||
-                        /^yes$/i.test(aria) ||
-                        /^no$/i.test(aria)
+                    if (id) {
+                        const linked = [...document.getElementsByTagName("label")]
+                            .find(label => label.htmlFor === id);
+
+                        if (linked) {
+                            const text = cleanQuestion(linked.innerText);
+                            if (text) return text;
+                        }
+                    }
+
+                    const wrapped = radio.closest("label");
+                    if (wrapped) {
+                        const text = cleanQuestion(
+                            [...wrapped.childNodes]
+                                .filter(node => node !== radio)
+                                .map(node => node.textContent || "")
+                                .join(" ")
+                        );
+                        if (text) return text;
+                    }
+
+                    return cleanQuestion(
+                        radio.getAttribute("aria-label") ||
+                        radio.value ||
+                        ""
                     );
-                });
+                };
+
+                const binaryTexts = visibleRadios.map(radio =>
+                    radioChoiceText(radio)
+                );
+
+                const allBinary = binaryTexts.every(text =>
+                    /^(yes|no)$/i.test(text)
+                );
 
                 if (allBinary) {
                     const position = visibleRadios.indexOf(el);

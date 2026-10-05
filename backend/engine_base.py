@@ -1932,7 +1932,7 @@ class Engine:
         # requires an explicit candidate fact.
         if profile.years_of_experience is not None and "experience" in question:
             range_match = re.search(
-                r"\b(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*years?\b",
+                r"\b(\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*years?\b",
                 question,
             )
             plus_match = re.search(
@@ -2224,11 +2224,75 @@ class Engine:
             if option is None:
                 return False
 
-            await item["frame"].locator(
-                f'[data-job-agent-id="{option["key"]}"]'
-            ).check()
+            option_label = str(option.get("label") or "").strip()
+            option_value = str(option.get("value") or "").strip()
 
-            return True
+            candidates = [
+                item["frame"].locator(
+                    f'[data-job-agent-id="{option["key"]}"]'
+                ),
+            ]
+
+            if option_value:
+                candidates.append(
+                    item["frame"].locator(
+                        f'input[type="radio"][value="{option_value}"]'
+                    )
+                )
+
+            if option_label:
+                candidates.append(
+                    item["frame"].get_by_label(
+                        option_label,
+                        exact=True,
+                    )
+                )
+
+            for candidate_locator in candidates:
+                try:
+                    count = await candidate_locator.count()
+                    for index in range(count):
+                        candidate = candidate_locator.nth(index)
+                        if not await candidate.is_visible():
+                            continue
+
+                        await candidate.scroll_into_view_if_needed()
+
+                        # get_by_label may resolve to a wrapping label rather
+                        # than the input, while the native input supports
+                        # check() reliably.
+                        tag = await candidate.evaluate(
+                            "el => el.tagName.toLowerCase()"
+                        )
+
+                        if tag == "input":
+                            await candidate.check()
+                        else:
+                            await candidate.click()
+
+                        await asyncio.sleep(0.15)
+
+                        if tag == "input":
+                            checked = await candidate.is_checked()
+                        else:
+                            checked = bool(
+                                await candidate.evaluate(
+                                    "el => el.querySelector('input[type=radio]')?.checked || "
+                                    "el.matches('input[type=radio]:checked')"
+                                )
+                            )
+
+                        if not checked and option_value:
+                            checked = await item["frame"].locator(
+                                f'input[type="radio"][value="{option_value}"]:checked'
+                            ).count() > 0
+
+                        if checked:
+                            return True
+                except Exception:
+                    continue
+
+            return False
 
         if kind == "checkbox":
             normalized = compact(answer)
@@ -2460,11 +2524,34 @@ class Engine:
 
             if kind == "radio":
                 for option in item.get("options", []):
-                    option_locator = item["frame"].locator(
-                        f'[data-job-agent-id="{option["key"]}"]'
-                    )
-                    if await option_locator.is_checked():
-                        return option["label"].strip()
+                    candidates = [
+                        item["frame"].locator(
+                            f'[data-job-agent-id="{option["key"]}"]'
+                        ),
+                    ]
+
+                    if option.get("value"):
+                        candidates.append(
+                            item["frame"].locator(
+                                f'input[type="radio"][value="{option["value"]}"]'
+                            )
+                        )
+
+                    label = str(option.get("label") or "").strip()
+                    if label:
+                        candidates.append(
+                            item["frame"].get_by_label(label, exact=True)
+                        )
+
+                    for option_locator in candidates:
+                        try:
+                            count = await option_locator.count()
+                            for index in range(count):
+                                candidate = option_locator.nth(index)
+                                if await candidate.is_checked():
+                                    return label or option.get("value", "")
+                        except Exception:
+                            continue
 
                 return ""
 

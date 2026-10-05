@@ -50,6 +50,194 @@ st.set_page_config(
     layout="wide",
 )
 
+
+# ---------- Product UI theme ----------
+st.markdown("""
+<style>
+:root {
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+  --border: #e5e7eb;
+  --text: #111827;
+  --muted: #6b7280;
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #dc2626;
+  --radius: 14px;
+}
+.stApp {
+  background: var(--bg);
+}
+[data-testid="stHeader"] {
+  background: rgba(245,247,251,.86);
+}
+.block-container {
+  max-width: 1440px;
+  padding-top: 2rem;
+  padding-bottom: 4rem;
+}
+.app-shell {
+  background: linear-gradient(135deg,#111827 0%,#172554 100%);
+  border: 1px solid #24324a;
+  border-radius: 20px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  box-shadow: 0 18px 45px rgba(15,23,42,.12);
+}
+.app-kicker {
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  font-size: .72rem;
+  font-weight: 700;
+  margin-bottom: 7px;
+}
+.app-title {
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1.15;
+  font-weight: 750;
+  margin: 0;
+}
+.app-subtitle {
+  color: #cbd5e1;
+  margin-top: 8px;
+  font-size: .95rem;
+}
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(34,197,94,.13);
+  border: 1px solid rgba(74,222,128,.25);
+  color: #bbf7d0;
+  font-size: .76rem;
+  font-weight: 650;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  background: #4ade80;
+  border-radius: 50%;
+}
+.section-label {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-size: .7rem;
+  font-weight: 750;
+  margin: 10px 0 8px;
+}
+div[data-testid="stMetric"] {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  box-shadow: 0 3px 12px rgba(15,23,42,.035);
+}
+div[data-testid="stMetricLabel"] {
+  color: var(--muted);
+  font-size: .76rem;
+}
+div[data-testid="stMetricValue"] {
+  color: var(--text);
+  font-weight: 750;
+}
+.stTabs [data-baseweb="tab-list"] {
+  gap: 4px;
+  background: #e9edf4;
+  padding: 5px;
+  border-radius: 12px;
+  border-bottom: 0;
+}
+.stTabs [data-baseweb="tab"] {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 9px;
+  color: #4b5563;
+  font-weight: 650;
+}
+.stTabs [aria-selected="true"] {
+  background: #fff !important;
+  color: #111827 !important;
+  box-shadow: 0 2px 8px rgba(15,23,42,.08);
+}
+.stButton > button {
+  border-radius: 9px;
+  min-height: 40px;
+  font-weight: 650;
+  border: 1px solid #d1d5db;
+  transition: all .15s ease;
+}
+.stButton > button:hover {
+  border-color: #9ca3af;
+  transform: translateY(-1px);
+}
+.stButton > button[kind="primary"] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.stButton > button[kind="primary"]:hover {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+div[data-testid="stTextInput"] input,
+div[data-testid="stTextArea"] textarea,
+div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+div[data-testid="stNumberInput"] input {
+  border-radius: 9px;
+}
+div[data-testid="stFileUploader"] {
+  background: var(--surface);
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 8px;
+}
+div[data-testid="stExpander"] {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+div[data-testid="stDataFrame"] {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+[data-testid="stAlert"] {
+  border-radius: 10px;
+}
+hr {
+  border-color: var(--border);
+}
+.small-muted {
+  color: var(--muted);
+  font-size: .8rem;
+}
+.control-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin: 8px 0 16px;
+}
+.live-banner {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  border-radius: 11px;
+  padding: 12px 15px;
+  font-size: .88rem;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 def api(
     method: str,
     path: str,
@@ -491,11 +679,18 @@ def live_console():
             language=None,
         )
 
-st.title("💼 Job Application Platform")
-st.caption(
-    "Reviewed profiles • Explicit search locations • "
-    "Human-approved application submissions"
-)
+st.markdown("""
+<div class="app-shell">
+  <div class="app-kicker">Job automation workspace</div>
+  <div class="app-title">Application Command Center</div>
+  <div class="app-subtitle">Discover roles, prepare applications, and keep every submission under your control.</div>
+  <div style="margin-top:16px;">
+    <span class="status-pill"><span class="status-dot"></span> Automation workspace online</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="section-label">Workspace</div>', unsafe_allow_html=True)
 
 if not API_TOKEN:
     st.error("Configure LOCAL_API_TOKEN in the project-root .env.")

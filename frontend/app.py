@@ -255,15 +255,26 @@ def live_console():
 
                         if options:
                             if suggestion in options:
+                                visible_options = options
                                 default_index = options.index(suggestion)
                             else:
-                                default_index = None
+                                # Never silently choose the first option when
+                                # the profile has no verified suggestion.
+                                placeholder = "— Select an answer —"
+                                visible_options = [placeholder] + options
+                                default_index = 0
 
-                            batch_answers[question["id"]] = st.radio(
+                            selected = st.radio(
                                 question.get("question", "Answer"),
-                                options=options,
+                                options=visible_options,
                                 index=default_index,
                                 key=f"batch-choice-{token}-{index}",
+                            )
+
+                            batch_answers[question["id"]] = (
+                                ""
+                                if selected == "— Select an answer —"
+                                else selected
                             )
                         else:
                             batch_answers[question["id"]] = st.text_input(

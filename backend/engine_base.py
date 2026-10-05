@@ -2306,6 +2306,250 @@ class Engine:
             option_value = str(option.get("value") or "").strip()
             frame = item["frame"]
 
+            async def focused_signature():
+                try:
+                    focused = frame.locator(":focus").first
+
+                    if await focused.count() == 0:
+                        return ""
+
+                    return compact(
+                        await focused.evaluate(
+                            """el => {
+                                const clean = value =>
+                                    (value || '').replace(/\s+/g, ' ').trim();
+
+                                const id = el.id || '';
+                                const linked = id
+                                    ? [...document.querySelectorAll('label')]
+                                        .find(label => label.htmlFor === id)
+                                    : null;
+                                const wrapped = el.closest('label');
+
+                                const nearby = [
+                                    linked?.innerText || '',
+                                    wrapped?.innerText || '',
+                                    el.getAttribute('aria-label') || '',
+                                    el.getAttribute('name') || '',
+                                    el.getAttribute('value') || '',
+                                    el.nextElementSibling?.innerText || '',
+                                    el.parentElement?.innerText || ''
+                                ].map(clean).filter(Boolean);
+
+                                let cursor = el.parentElement;
+                                for (let depth = 0; cursor && depth < 5; depth++) {
+                                    const text = clean(cursor.innerText);
+                                    if (text) nearby.push(text);
+                                    cursor = cursor.parentElement;
+                                }
+
+                                return nearby.join(' | ');
+                            }"""
+                        )
+                    )
+                except Exception:
+                    return ""
+
+            async def verify_live_radio():
+                try:
+                    radios = frame.locator('input[type="radio"]')
+                    count = await radios.count()
+
+                    for index in range(count):
+                        radio = radios.nth(index)
+
+                        try:
+                            if not await radio.is_visible() and not await radio.is_enabled():
+                                continue
+                            if not await radio.is_checked():
+                                continue
+                        except Exception:
+                            continue
+
+                        signature = await radio.evaluate(
+                            """el => {
+                                const clean = value =>
+                                    (value || '').replace(/\s+/g, ' ').trim();
+
+                                const id = el.id || '';
+                                const linked = id
+                                    ? [...document.querySelectorAll('label')]
+                                        .find(label => label.htmlFor === id)
+                                    : null;
+                                const wrapped = el.closest('label');
+
+                                return clean(
+                                    linked?.innerText ||
+                                    wrapped?.innerText ||
+                                    el.getAttribute('aria-label') ||
+                                    el.value ||
+                                    ''
+                                );
+                            }"""
+                        )
+
+                        if compact(signature).lower() == option_label.lower():
+                            return True
+                except Exception:
+                    pass
+
+                return False
+
+            # Direct live-label click. This is safer than relying on stale
+            # data-job-agent IDs and works with LinkedIn's custom React radios.
+            try:
+                labels = frame.locator("label").filter(
+                    has_text=re.compile(
+                        rf"^\s*{re.escape(option_label)}\s*$",
+                        re.I,
+                    )
+                )
+
+                for index in range(await labels.count()):
+                    label_locator = labels.nth(index)
+
+                    if not await label_locator.is_visible():
+                        continue
+
+                    try:
+                        await label_locator.scroll_into_view_if_needed()
+                        await label_locator.click()
+                        await asyncio.sleep(0.2)
+
+                        if await verify_live_radio():
+                            self.run.log(
+                                f"Applied radio answer by label click: "
+                                f"{item['label']} -> {option_label}"
+                            )
+                            return True
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+            # Keyboard fallback using the REAL tab order. LinkedIn may expose
+            # a visually custom option while the native radio input is hidden.
+            try:
+                # Start from the first tabbable control in the dialog/form.
+                focus_scope = frame.locator(
+                    'dialog:visible, [role="dialog"]:visible, main'
+                ).first
+
+                tabbables = focus_scope.locator(
+                    'button:not([disabled]), '
+                    'a[href], '
+                    'input:not([disabled]):not([type="hidden"]), '
+                    'select:not([disabled]), '
+                    'textarea:not([disabled]), '
+                    '[role="button"]:not([aria-disabled="true"]), '
+                    '[role="radio"]:not([aria-disabled="true"])'
+                )
+
+                tab_count = await tabbables.count()
+
+                if tab_count:
+                    await tabbables.first.focus()
+
+                    max_tabs = min(max(tab_count * 2, 20), 120)
+
+                    for _ in range(max_tabs):
+                        signature = (await focused_signature()).lower()
+
+                        option_hit = (
+                            option_label.lower() == "yes" and
+                            re.search(r"\byes\b", signature)
+                        ) or (
+                            option_label.lower() == "no" and
+                            re.search(r"\bno\b", signature)
+                        ) or (
+                            option_label and
+                            option_label.lower() in signature
+                        )
+
+                        # Avoid matching an unrelated "No" in surrounding
+                        # question text unless the focused element itself
+                        # exposes a Yes/No control.
+                        control_match = False
+                        try:
+                            focused = frame.locator(":focus").first
+                            role = compact(
+                                await focused.get_attribute("role") or ""
+                            ).lower()
+                            tag = (
+                                await focused.evaluate(
+                                    "el => el.tagName.toLowerCase()"
+                                )
+                            )
+
+                            control_match = (
+                                role in {"radio", "button", "option"} or
+                                tag in {"input", "button"}
+                            )
+                        except Exception:
+                            pass
+
+                        if option_hit and control_match:
+                            self.run.log(
+                                f"Keyboard focus matched radio option: "
+                                f"{item['label']} -> {option_label}"
+                            )
+
+                            await frame.locator(":focus").press("Space")
+                            await asyncio.sleep(0.2)
+
+                            if await verify_live_radio():
+                                self.run.log(
+                                    f"Applied radio answer with Tab + Space: "
+                                    f"{item['label']} -> {option_label}"
+                                )
+                                return True
+
+                        await self.page.keyboard.press("Tab")
+                        await asyncio.sleep(0.05)
+
+            except Exception as exc:
+                self.run.log(
+                    f"Tab-order radio fallback failed: "
+                    f"{type(exc).__name__}: {exc}",
+                    "warning",
+                )
+
+            # Final fallback: click the option text through exact visible
+            # text, then verify a radio became selected.
+            try:
+                text_options = frame.get_by_text(
+                    option_label,
+                    exact=True,
+                )
+
+                for index in range(await text_options.count()):
+                    target = text_options.nth(index)
+
+                    if not await target.is_visible():
+                        continue
+
+                    try:
+                        await target.scroll_into_view_if_needed()
+                        await target.click()
+                        await asyncio.sleep(0.2)
+
+                        if await verify_live_radio():
+                            self.run.log(
+                                f"Applied radio answer by option text: "
+                                f"{item['label']} -> {option_label}"
+                            )
+                            return True
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+            return False
+
+            option_label = str(option.get("label") or "").strip()
+            option_value = str(option.get("value") or "").strip()
+            frame = item["frame"]
+
             async def verify_selected(target_label: str) -> bool:
                 """Verify the requested live option is actually selected."""
                 try:

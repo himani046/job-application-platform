@@ -368,6 +368,117 @@ def paste_resume_images(
 
     return expected_count
 
+def upload_image_document(
+    page: Page,
+    image_path: Path,
+) -> None:
+    """Upload a resume image through ChatGPT's native file input."""
+    if not image_path.is_file():
+        raise ValueError(f"Image attachment does not exist: {image_path.name}")
+
+    deadline = time.monotonic() + CHATGPT_TIMEOUT
+    attachment_attempted = False
+    menu_attempted = False
+
+    while time.monotonic() < deadline:
+        check_page_open(page)
+
+        file_inputs = page.locator('input[type="file"]')
+        for index in range(file_inputs.count()):
+            file_input = file_inputs.nth(index)
+            try:
+                if file_input.is_disabled():
+                    continue
+
+                accept = (file_input.get_attribute("accept") or "").lower()
+                if accept and not any(
+                    token in accept
+                    for token in ("image/*", "image/png", ".png", "*/*")
+                ):
+                    continue
+
+                file_input.set_input_files(str(image_path), timeout=15000)
+                page.wait_for_timeout(900)
+
+                if (
+                    visible_image_preview_count(page) > 0
+                    or attachment_visible(page, image_path.name)
+                ):
+                    browser_log(
+                        f"Verified native image attachment: {image_path.name}"
+                    )
+                    return
+            except PlaywrightTimeoutError:
+                check_page_open(page)
+            except Exception:
+                check_page_open(page)
+
+        if not attachment_attempted:
+            for opener in page.get_by_role(
+                "button",
+                name=ATTACHMENT_BUTTON_PATTERN,
+            ).all():
+                try:
+                    if not opener.is_visible() or not opener.is_enabled():
+                        continue
+                    attachment_attempted = True
+
+                    if click_document_upload_control(
+                        page, opener, image_path
+                    ):
+                        page.wait_for_timeout(900)
+                        if (
+                            visible_image_preview_count(page) > 0
+                            or attachment_visible(page, image_path.name)
+                        ):
+                            browser_log(
+                                f"Verified image attachment: {image_path.name}"
+                            )
+                            return
+                except Exception:
+                    check_page_open(page)
+
+        if not menu_attempted:
+            options = (
+                page.get_by_role(
+                    "menuitem",
+                    name=UPLOAD_MENU_PATTERN,
+                ).all()
+                + page.get_by_role(
+                    "button",
+                    name=UPLOAD_MENU_PATTERN,
+                ).all()
+            )
+
+            for option in options:
+                try:
+                    if not option.is_visible() or not option.is_enabled():
+                        continue
+                    menu_attempted = True
+
+                    if click_document_upload_control(
+                        page, option, image_path
+                    ):
+                        page.wait_for_timeout(900)
+                        if (
+                            visible_image_preview_count(page) > 0
+                            or attachment_visible(page, image_path.name)
+                        ):
+                            browser_log(
+                                f"Verified image attachment: {image_path.name}"
+                            )
+                            return
+                except Exception:
+                    check_page_open(page)
+
+        page.wait_for_timeout(700)
+
+    raise RuntimeError(
+        f"ChatGPT did not accept the resume image {image_path.name}. "
+        "The image was not submitted and the prompt was not sent."
+    )
+
+
 def document_input_allowed(accept: str, extension: str) -> bool:
     accept = accept.strip().lower()
     extension = extension.lower()
@@ -1245,10 +1356,13 @@ def browser_request(
                 if png_attachments:
                     fill_prompt(page, prompt)
 
-                    expected_previews = paste_resume_images(
-                        page,
-                        attachment_paths,
-                    )
+                    # Prefer native file upload over clipboard paste. The
+                    # ChatGPT composer can accept a clipboard write while
+                    # silently dropping the pasted image.
+                    for image_path in attachment_paths:
+                        upload_image_document(page, image_path)
+
+                    expected_previews = len(attachment_paths)
 
                 else:
                     document_paths = attachment_paths

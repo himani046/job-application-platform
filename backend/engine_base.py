@@ -254,18 +254,63 @@ FORM_SCRIPT = r"""
             let group = null;
             let members = [];
 
-            // LinkedIn radio controls frequently have different or empty
-            // name attributes. Group by the nearest ancestor containing at
-            // least two visible radio inputs.
+            const visibleRadios = nodes.filter(other =>
+                other.type === "radio" &&
+                !other.disabled &&
+                visible(other)
+            );
+
+            // Prefer a local ancestor containing exactly two radios. The old
+            // >=2 rule incorrectly merged an entire LinkedIn page containing
+            // many independent Yes/No questions into one giant field.
             for (const candidate of ancestors) {
                 const radios = [...candidate.querySelectorAll(
                     'input[type="radio"]'
                 )].filter(item => !item.disabled && visible(item));
 
-                if (radios.length >= 2 && radios.includes(el)) {
+                if (radios.length === 2 && radios.includes(el)) {
                     group = candidate;
                     members = radios;
                     break;
+                }
+            }
+
+            // LinkedIn sometimes has no useful per-question wrapper at all.
+            // For a page whose radio controls are all binary Yes/No choices,
+            // use DOM order and pair adjacent radios. This creates one field
+            // per question instead of one field for the whole page.
+            if (!group && visibleRadios.length >= 2) {
+                const allBinary = visibleRadios.every(radio => {
+                    const value = cleanQuestion(radio.value || "");
+                    const aria = cleanQuestion(
+                        radio.getAttribute("aria-label") || ""
+                    );
+
+                    return (
+                        /^yes$/i.test(value) ||
+                        /^no$/i.test(value) ||
+                        /^yes$/i.test(aria) ||
+                        /^no$/i.test(aria)
+                    );
+                });
+
+                if (allBinary) {
+                    const position = visibleRadios.indexOf(el);
+
+                    if (position >= 0) {
+                        const pairStart = position % 2 === 0
+                            ? position
+                            : position - 1;
+
+                        members = visibleRadios.slice(
+                            pairStart,
+                            pairStart + 2
+                        );
+
+                        if (members.length === 2) {
+                            group = members[0].parentElement || members[0];
+                        }
+                    }
                 }
             }
 
@@ -280,14 +325,21 @@ FORM_SCRIPT = r"""
                     )
                     : [];
 
-                members = sameName.length >= 2 ? sameName : [el];
-                group = el.parentElement;
+                if (sameName.length >= 2 && sameName.length <= 6) {
+                    members = sameName;
+                    group = el.parentElement;
+                } else {
+                    members = [el];
+                    group = el.parentElement;
+                }
             }
 
             const firstMember = members[0] || el;
             const formIndex = [...document.forms].indexOf(el.form);
+
             const groupKey =
-                String(formIndex) + ":" + mark(group || firstMember);
+                String(formIndex) + ":" +
+                mark(firstMember);
 
             if (seenRadioGroups.has(groupKey)) {
                 continue;
@@ -367,7 +419,8 @@ FORM_SCRIPT = r"""
                 group?.parentElement?.parentElement?.parentElement?.innerText || "",
                 group?.parentElement?.parentElement?.parentElement?.parentElement?.innerText || "",
                 el.parentElement?.previousElementSibling?.innerText || "",
-                el.parentElement?.parentElement?.previousElementSibling?.innerText || ""
+                el.parentElement?.parentElement?.previousElementSibling?.innerText || "",
+                el.parentElement?.parentElement?.parentElement?.previousElementSibling?.innerText || ""
             ];
 
             const cleanedQuestionSources = questionSources

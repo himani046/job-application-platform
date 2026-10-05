@@ -79,8 +79,23 @@ def build_field_spec(item: dict) -> FieldSpec:
         semantic=semantic, options=tuple(item.get("options", [])), filled=bool(item.get("filled")))
 
 def answer_from_profile(spec: FieldSpec, profile: Any) -> str | None:
-    if profile is None or spec.sensitive:
+    if profile is None:
         return None
+
+    # Explicit answers saved by the candidate take precedence over the
+    # generic sensitive-field guard. This keeps the planner consistent with
+    # the live browser engine for repetitive fields such as Current CTC.
+    saved_common = common_answer_for_question(
+        spec.label,
+        profile.custom_answers,
+        profile.common_answer_aliases,
+    )
+    if saved_common:
+        return saved_common
+
+    if spec.sensitive:
+        return None
+
     p, o = profile.personal, profile.online_profiles
     values = {
         "first_name": p.first_name, "last_name": p.last_name, "full_name": p.full_name,
@@ -107,11 +122,7 @@ def answer_from_profile(spec: FieldSpec, profile: Any) -> str | None:
     if answer is not None and str(answer).strip():
         return str(answer).strip()
 
-    return common_answer_for_question(
-        spec.label,
-        profile.custom_answers,
-        profile.common_answer_aliases,
-    ) or profile.custom_answers.get(
+    return profile.custom_answers.get(
         re.sub(r"[^a-z0-9]+", " ", spec.label.lower()).strip()
     )
 

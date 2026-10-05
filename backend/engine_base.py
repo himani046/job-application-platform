@@ -2304,72 +2304,129 @@ class Engine:
 
             option_label = str(option.get("label") or "").strip()
             option_value = str(option.get("value") or "").strip()
+            question_text = compact(item.get("label", ""))
             frame = item["frame"]
 
-            async def focused_signature():
+            async def selected_in_group(group) -> bool:
                 try:
-                    focused = frame.locator(":focus").first
-
-                    if await focused.count() == 0:
-                        return ""
-
-                    return compact(
-                        await focused.evaluate(
-                            """el => {
-                                const clean = value =>
-                                    (value || '').replace(/\s+/g, ' ').trim();
-
-                                const id = el.id || '';
-                                const linked = id
-                                    ? [...document.querySelectorAll('label')]
-                                        .find(label => label.htmlFor === id)
-                                    : null;
-                                const wrapped = el.closest('label');
-
-                                const nearby = [
-                                    linked?.innerText || '',
-                                    wrapped?.innerText || '',
-                                    el.getAttribute('aria-label') || '',
-                                    el.getAttribute('name') || '',
-                                    el.getAttribute('value') || '',
-                                    el.nextElementSibling?.innerText || '',
-                                    el.parentElement?.innerText || ''
-                                ].map(clean).filter(Boolean);
-
-                                let cursor = el.parentElement;
-                                for (let depth = 0; cursor && depth < 5; depth++) {
-                                    const text = clean(cursor.innerText);
-                                    if (text) nearby.push(text);
-                                    cursor = cursor.parentElement;
-                                }
-
-                                return nearby.join(' | ');
-                            }"""
-                        )
+                    radios = group.locator(
+                        'input[type="radio"], [role="radio"]'
                     )
-                except Exception:
-                    return ""
-
-            async def verify_live_radio():
-                try:
-                    radios = frame.locator('input[type="radio"]')
                     count = await radios.count()
 
                     for index in range(count):
                         radio = radios.nth(index)
-
                         try:
-                            if not await radio.is_visible() and not await radio.is_enabled():
+                            if not await radio.is_visible():
                                 continue
-                            if not await radio.is_checked():
+
+                            checked = False
+
+                            if await radio.get_attribute("aria-checked") == "true":
+                                checked = True
+                            else:
+                                try:
+                                    checked = await radio.is_checked()
+                                except Exception:
+                                    pass
+
+                            if not checked:
                                 continue
+
+                            text = compact(
+                                await radio.get_attribute("aria-label") or
+                                await radio.get_attribute("value") or ""
+                            )
+
+                            if text.lower() == option_label.lower():
+                                return True
+
+                            linked = await radio.get_attribute("id")
+                            if linked:
+                                labels = frame.locator(
+                                    f'label[for="{linked}"]'
+                                )
+                                for label_index in range(await labels.count()):
+                                    label_text = compact(
+                                        await labels.nth(label_index).inner_text()
+                                    )
+                                    if label_text.lower() == option_label.lower():
+                                        return True
                         except Exception:
                             continue
+                except Exception:
+                    pass
 
-                        signature = await radio.evaluate(
+                return False
+
+            # 1. Prefer LinkedIn's accessible radiogroup/radio semantics.
+            try:
+                if question_text:
+                    groups = frame.get_by_role(
+                        "radiogroup",
+                        name=re.compile(
+                            re.escape(question_text.rstrip("*").strip()),
+                            re.I,
+                        ),
+                    )
+
+                    for group_index in range(await groups.count()):
+                        group = groups.nth(group_index)
+                        if not await group.is_visible():
+                            continue
+
+                        radios = group.get_by_role(
+                            "radio",
+                            name=option_label,
+                            exact=True,
+                        )
+
+                        for radio_index in range(await radios.count()):
+                            radio = radios.nth(radio_index)
+                            if not await radio.is_visible():
+                                continue
+
+                            await radio.scroll_into_view_if_needed()
+                            await radio.click()
+                            await asyncio.sleep(0.2)
+
+                            checked = (
+                                await radio.get_attribute("aria-checked")
+                            ) == "true"
+
+                            if not checked:
+                                try:
+                                    checked = await radio.is_checked()
+                                except Exception:
+                                    pass
+
+                            if checked:
+                                self.run.log(
+                                    f"Applied radio via accessible group: "
+                                    f"{question_text} -> {option_label}"
+                                )
+                                return True
+            except Exception:
+                pass
+
+            # 2. Find a DOM container for THIS question, then click only the
+            # requested option inside it. Never search all "Yes"/"No" labels
+            # on the page without question context.
+            try:
+                all_radios = frame.locator('input[type="radio"]')
+                count = await all_radios.count()
+
+                for index in range(count):
+                    radio = all_radios.nth(index)
+
+                    try:
+                        if not await radio.is_visible():
+                            continue
+
+                        option_info = await radio.evaluate(
                             """el => {
                                 const clean = value =>
-                                    (value || '').replace(/\s+/g, ' ').trim();
+                                    (value || '').replace(/\\s+/g, ' ').trim();
 
                                 const id = el.id || '';
                                 const linked = id
@@ -2378,171 +2435,191 @@ class Engine:
                                     : null;
                                 const wrapped = el.closest('label');
 
-                                return clean(
+                                const label = clean(
                                     linked?.innerText ||
                                     wrapped?.innerText ||
                                     el.getAttribute('aria-label') ||
                                     el.value ||
                                     ''
                                 );
+
+                                let group = el.parentElement;
+                                let best = null;
+
+                                for (let depth = 0; group && depth < 8; depth++) {
+                                    const radios = [
+                                        ...group.querySelectorAll(
+                                            'input[type="radio"]'
+                                        )
+                                    ].filter(r => !r.disabled);
+
+                                    if (radios.length >= 2) {
+                                        best = group;
+                                        if (radios.length === 2) break;
+                                    }
+
+                                    group = group.parentElement;
+                                }
+
+                                const groupText = clean(best?.innerText || '');
+                                return {
+                                    label,
+                                    value: clean(el.value),
+                                    groupText
+                                };
                             }"""
                         )
-
-                        if compact(signature).lower() == option_label.lower():
-                            return True
-                except Exception:
-                    pass
-
-                return False
-
-            # Direct live-label click. This is safer than relying on stale
-            # data-job-agent IDs and works with LinkedIn's custom React radios.
-            try:
-                labels = frame.locator("label").filter(
-                    has_text=re.compile(
-                        rf"^\s*{re.escape(option_label)}\s*$",
-                        re.I,
-                    )
-                )
-
-                for index in range(await labels.count()):
-                    label_locator = labels.nth(index)
-
-                    if not await label_locator.is_visible():
-                        continue
-
-                    try:
-                        await label_locator.scroll_into_view_if_needed()
-                        await label_locator.click()
-                        await asyncio.sleep(0.2)
-
-                        if await verify_live_radio():
-                            self.run.log(
-                                f"Applied radio answer by label click: "
-                                f"{item['label']} -> {option_label}"
-                            )
-                            return True
                     except Exception:
                         continue
+
+                    label = compact(option_info.get("label", ""))
+                    value = compact(option_info.get("value", ""))
+                    group_text = compact(option_info.get("groupText", ""))
+
+                    label_matches = (
+                        label.lower() == option_label.lower()
+                        or value.lower() == option_value.lower()
+                    )
+
+                    normalized_group = re.sub(
+                        r"\b(?:yes|no|this field is required|required|optional)\b",
+                        " ",
+                        group_text,
+                        flags=re.I,
+                    )
+                    normalized_group = compact(normalized_group)
+                    normalized_question = compact(
+                        question_text.rstrip("*").strip()
+                    )
+
+                    question_matches = (
+                        normalized_question
+                        and (
+                            normalized_question.lower()
+                            in normalized_group.lower()
+                            or normalized_group.lower()
+                            in normalized_question.lower()
+                        )
+                    )
+
+                    if not (label_matches and question_matches):
+                        continue
+
+                    await radio.scroll_into_view_if_needed()
+
+                    # Try native keyboard activation first.
+                    try:
+                        await radio.focus()
+                        await radio.press("Space")
+                        await asyncio.sleep(0.2)
+                    except Exception:
+                        pass
+
+                    checked = False
+                    try:
+                        checked = await radio.is_checked()
+                    except Exception:
+                        pass
+
+                    if not checked:
+                        checked = (
+                            await radio.get_attribute("aria-checked")
+                        ) == "true"
+
+                    if checked:
+                        self.run.log(
+                            f"Applied radio with question-scoped Space: "
+                            f"{question_text} -> {option_label}"
+                        )
+                        return True
+
+                    # Exact label click inside the matched question group.
+                    try:
+                        parent = radio.locator("xpath=..")
+                        label_locator = parent.get_by_text(
+                            option_label,
+                            exact=True,
+                        )
+
+                        if await label_locator.count():
+                            await label_locator.first.click()
+                            await asyncio.sleep(0.2)
+
+                            if await radio.is_checked():
+                                self.run.log(
+                                    f"Applied radio with question-scoped label: "
+                                    f"{question_text} -> {option_label}"
+                                )
+                                return True
+                    except Exception:
+                        pass
+
             except Exception:
                 pass
 
-            # Keyboard fallback using the REAL tab order. LinkedIn may expose
-            # a visually custom option while the native radio input is hidden.
+            # 3. Last resort: resolve the pair by DOM order and use the
+            # question item's position among binary groups.
             try:
-                # Start from the first tabbable control in the dialog/form.
-                focus_scope = frame.locator(
-                    'dialog:visible, [role="dialog"]:visible, main'
-                ).first
+                radios = frame.locator('input[type="radio"]')
+                count = await radios.count()
 
-                tabbables = focus_scope.locator(
-                    'button:not([disabled]), '
-                    'a[href], '
-                    'input:not([disabled]):not([type="hidden"]), '
-                    'select:not([disabled]), '
-                    'textarea:not([disabled]), '
-                    '[role="button"]:not([aria-disabled="true"]), '
-                    '[role="radio"]:not([aria-disabled="true"])'
-                )
+                binary_groups = []
+                index = 0
 
-                tab_count = await tabbables.count()
+                while index + 1 < count:
+                    first = radios.nth(index)
+                    second = radios.nth(index + 1)
 
-                if tab_count:
-                    await tabbables.first.focus()
+                    first_text = compact(
+                        await first.get_attribute("aria-label") or
+                        await first.get_attribute("value") or ""
+                    )
+                    second_text = compact(
+                        await second.get_attribute("aria-label") or
+                        await second.get_attribute("value") or ""
+                    )
 
-                    max_tabs = min(max(tab_count * 2, 20), 120)
+                    if {first_text.lower(), second_text.lower()} == {"yes", "no"}:
+                        binary_groups.append((index, index + 1))
+                        index += 2
+                    else:
+                        index += 1
 
-                    for _ in range(max_tabs):
-                        signature = (await focused_signature()).lower()
+                if binary_groups:
+                    # Use the order of detected question fields when the
+                    # question cannot be resolved structurally.
+                    question_index = max(
+                        0,
+                        min(
+                            len(binary_groups) - 1,
+                            int(item.get("radio_group_index", 0)),
+                        ),
+                    )
 
-                        option_hit = (
-                            option_label.lower() == "yes" and
-                            re.search(r"\byes\b", signature)
-                        ) or (
-                            option_label.lower() == "no" and
-                            re.search(r"\bno\b", signature)
-                        ) or (
-                            option_label and
-                            option_label.lower() in signature
+                    first_index, second_index = binary_groups[question_index]
+                    target_index = (
+                        first_index
+                        if option_label.lower() == "yes"
+                        else second_index
+                    )
+
+                    target = radios.nth(target_index)
+                    await target.focus()
+                    await target.press("Space")
+                    await asyncio.sleep(0.2)
+
+                    if await target.is_checked():
+                        self.run.log(
+                            f"Applied radio by binary pair keyboard fallback: "
+                            f"{question_text} -> {option_label}"
                         )
-
-                        # Avoid matching an unrelated "No" in surrounding
-                        # question text unless the focused element itself
-                        # exposes a Yes/No control.
-                        control_match = False
-                        try:
-                            focused = frame.locator(":focus").first
-                            role = compact(
-                                await focused.get_attribute("role") or ""
-                            ).lower()
-                            tag = (
-                                await focused.evaluate(
-                                    "el => el.tagName.toLowerCase()"
-                                )
-                            )
-
-                            control_match = (
-                                role in {"radio", "button", "option"} or
-                                tag in {"input", "button"}
-                            )
-                        except Exception:
-                            pass
-
-                        if option_hit and control_match:
-                            self.run.log(
-                                f"Keyboard focus matched radio option: "
-                                f"{item['label']} -> {option_label}"
-                            )
-
-                            await frame.locator(":focus").press("Space")
-                            await asyncio.sleep(0.2)
-
-                            if await verify_live_radio():
-                                self.run.log(
-                                    f"Applied radio answer with Tab + Space: "
-                                    f"{item['label']} -> {option_label}"
-                                )
-                                return True
-
-                        await self.page.keyboard.press("Tab")
-                        await asyncio.sleep(0.05)
-
+                        return True
             except Exception as exc:
                 self.run.log(
-                    f"Tab-order radio fallback failed: "
+                    f"Radio keyboard fallback failed: "
                     f"{type(exc).__name__}: {exc}",
                     "warning",
                 )
-
-            # Final fallback: click the option text through exact visible
-            # text, then verify a radio became selected.
-            try:
-                text_options = frame.get_by_text(
-                    option_label,
-                    exact=True,
-                )
-
-                for index in range(await text_options.count()):
-                    target = text_options.nth(index)
-
-                    if not await target.is_visible():
-                        continue
-
-                    try:
-                        await target.scroll_into_view_if_needed()
-                        await target.click()
-                        await asyncio.sleep(0.2)
-
-                        if await verify_live_radio():
-                            self.run.log(
-                                f"Applied radio answer by option text: "
-                                f"{item['label']} -> {option_label}"
-                            )
-                            return True
-                    except Exception:
-                        continue
-            except Exception:
-                pass
 
             return False
 

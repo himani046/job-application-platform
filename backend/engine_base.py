@@ -3341,6 +3341,14 @@ class Engine:
 
                 remaining_choices = []
                 for item in unresolved_choices:
+                    review = review_field(item)
+
+                    # Sensitive/legal questions always go through explicit
+                    # candidate review, even when a stored answer exists.
+                    if review["sensitive"]:
+                        remaining_choices.append(item)
+                        continue
+
                     answer = self.known_answer(item)
                     if answer is not None and await self.fill(item, answer):
                         self.handled.add((item["frame"].url, item["key"]))

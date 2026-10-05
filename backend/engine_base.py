@@ -2302,6 +2302,78 @@ class Engine:
             if option is None:
                 return False
 
+            option_label = compact(option.get("label", ""))
+            question = compact(item.get("label", "")).rstrip("*").strip()
+
+            # LinkedIn Easy Apply exposes the actual keyboard/click target as
+            # an outer div[role=radio]. Its aria-label is the question and its
+            # inner text is the option ("Yes" or "No"). Use that exact
+            # accessibility contract instead of the hidden native input.
+            try:
+                radios = item["frame"].locator(
+                    '[role="radiogroup"] [role="radio"]'
+                )
+
+                for index in range(await radios.count()):
+                    radio = radios.nth(index)
+
+                    if not await radio.is_visible():
+                        continue
+
+                    aria_label = compact(
+                        await radio.get_attribute("aria-label") or ""
+                    ).rstrip("*").strip()
+
+                    if question and aria_label.lower() != question.lower():
+                        continue
+
+                    rendered_option = compact(await radio.inner_text())
+
+                    if rendered_option.lower() != option_label.lower():
+                        continue
+
+                    await radio.scroll_into_view_if_needed()
+                    await radio.focus()
+                    await radio.press("Space")
+                    await asyncio.sleep(0.2)
+
+                    if (
+                        await radio.get_attribute("aria-checked")
+                    ) == "true":
+                        self.run.log(
+                            f"Applied LinkedIn role=radio with Space: "
+                            f"{question} -> {option_label}"
+                        )
+                        return True
+
+                    # LinkedIn's React handler may require an actual click
+                    # on the same outer role=radio node.
+                    await radio.click(force=True)
+                    await asyncio.sleep(0.2)
+
+                    if (
+                        await radio.get_attribute("aria-checked")
+                    ) == "true":
+                        self.run.log(
+                            f"Applied LinkedIn role=radio with click: "
+                            f"{question} -> {option_label}"
+                        )
+                        return True
+
+            except Exception as exc:
+                self.run.log(
+                    f"LinkedIn role=radio selection failed: "
+                    f"{type(exc).__name__}: {exc}",
+                    "warning",
+                )
+
+            # If the accessibility wrapper is not present, fall through to
+            # the existing native-radio implementation.
+            option = self.choose_option(answer, item["options"])
+
+            if option is None:
+                return False
+
             option_label = str(option.get("label") or "").strip()
             option_value = str(option.get("value") or "").strip()
             question_text = compact(item.get("label", ""))
@@ -3290,6 +3362,38 @@ class Engine:
                 return value
 
             if kind == "radio":
+                frame = item["frame"]
+                question = compact(item.get("label", "")).rstrip("*").strip().lower()
+
+                try:
+                    radios = frame.locator(
+                        '[role="radiogroup"] [role="radio"], [role="radio"]'
+                    )
+
+                    for index in range(await radios.count()):
+                        radio = radios.nth(index)
+
+                        if not await radio.is_visible():
+                            continue
+
+                        aria_label = compact(
+                            await radio.get_attribute("aria-label") or ""
+                        ).rstrip("*").strip().lower()
+
+                        if question and aria_label != question:
+                            continue
+
+                        if (
+                            await radio.get_attribute("aria-checked")
+                        ) != "true":
+                            continue
+
+                        value = compact(await radio.inner_text())
+                        if value:
+                            return value
+                except Exception:
+                    pass
+
                 for option in item.get("options", []):
                     candidates = [
                         item["frame"].locator(

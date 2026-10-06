@@ -3958,11 +3958,38 @@ class Engine:
             await self.settle()
 
             if await self.confirmed():
+                confirmation = await self.page_text()
                 self.run.status = "completed"
 
+                if self.run.application_id:
+                    try:
+                        application = get_application(self.run.application_id)
+                        application.status = "submitted"
+                        application.confirmation_text = confirmation[:5000]
+                        application.human_approved = True
+                        record_event(
+                            application,
+                            "submission_confirmed",
+                            "LinkedIn displayed the application confirmation message.",
+                        )
+                    except (FileNotFoundError, ValueError):
+                        pass
+
                 self.run.log(
-                    "The page displays an application confirmation."
+                    "Application submitted successfully; confirmation message detected."
                 )
+
+                # The application is complete. Close the automated browser so
+                # the session cannot continue or accidentally interact with
+                # the submitted application.
+                if self.context:
+                    try:
+                        await self.context.close()
+                    except Exception as exc:
+                        self.run.log(
+                            f"Browser close after confirmed submission failed: {type(exc).__name__}: {exc}",
+                            "warning",
+                        )
                 return
 
             await asyncio.sleep(0.7)
@@ -3991,11 +4018,34 @@ class Engine:
             await self.settle()
 
             if await self.confirmed():
+                confirmation = await self.page_text()
                 self.run.status = "completed"
 
+                if self.run.application_id:
+                    try:
+                        application = get_application(self.run.application_id)
+                        application.status = "submitted"
+                        application.confirmation_text = confirmation[:5000]
+                        application.human_approved = True
+                        record_event(
+                            application,
+                            "submission_confirmed",
+                            "LinkedIn displayed the application confirmation message after re-check.",
+                        )
+                    except (FileNotFoundError, ValueError):
+                        pass
+
                 self.run.log(
-                    "The page now displays an application confirmation."
+                    "Application submission confirmed after re-check; closing browser."
                 )
+                if self.context:
+                    try:
+                        await self.context.close()
+                    except Exception as exc:
+                        self.run.log(
+                            f"Browser close after confirmed submission failed: {type(exc).__name__}: {exc}",
+                            "warning",
+                        )
                 return
 
     async def linkedin_application_scope_ready(self) -> bool:

@@ -4191,6 +4191,40 @@ class Engine:
                     )
                     return True
 
+            # Newer LinkedIn UI can render resume cards without native radio
+            # inputs. Treat an explicitly selected card as already handled.
+            selected_controls = frame.locator(
+                'dialog:visible [aria-checked="true"], '
+                'dialog:visible [aria-selected="true"], '
+                '[role="dialog"]:visible [aria-checked="true"], '
+                '[role="dialog"]:visible [aria-selected="true"]'
+            )
+            for index in range(await selected_controls.count()):
+                control = selected_controls.nth(index)
+                if await control.is_visible():
+                    self.run.log(
+                        "LinkedIn resume picker detected; an existing resume "
+                        "card is already selected. Keeping the selected resume."
+                    )
+                    return True
+
+            # If the picker has a single existing resume card and no upload
+            # is required, LinkedIn has already selected the latest resume.
+            # Do not stop the automation just because the UI does not expose
+            # a native radio/aria selection state.
+            resume_name = self.resume_path.name if self.resume_path else ""
+            if resume_name:
+                visible_name = frame.get_by_text(
+                    re.escape(Path(resume_name).stem),
+                    exact=False,
+                )
+                if await visible_name.count() == 1 and await visible_name.first.is_visible():
+                    self.run.log(
+                        "LinkedIn resume picker shows the saved profile resume; "
+                        "continuing with the preselected resume."
+                    )
+                    return True
+
             # If nothing is selected, try to select the current profile
             # resume by its visible filename.
             resume_name = self.resume_path.name if self.resume_path else ""

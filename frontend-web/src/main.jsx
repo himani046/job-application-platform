@@ -436,7 +436,7 @@ function Intervention({run,cmd}){
           <Btn
             primary
             icon={Check}
-            disabled={batchQuestions.some(q=>q.required&&!String(batch[q.id]??q.suggestion??"").trim())}
+            disabled={!batchQuestions.every(q=>!q.required||String(batch[q.id]??q.suggestion??"").trim().length>0)}
             onClick={()=>cmd({
               action:"answer",
               answer:JSON.stringify({

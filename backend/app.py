@@ -20,6 +20,7 @@ if hasattr(asyncio, "WindowsProactorEventLoopPolicy"):
         # In that case the host's event-loop policy is left untouched.
         pass
 
+from backend.common_answers import COMMON_QUESTIONS
 from backend.job_store import get_job, list_jobs, upsert_jobs
 from backend.analytics import summarize_applications
 from backend.run_queue import RunQueue
@@ -357,6 +358,20 @@ async def upload_profile(file: UploadFile = File(...)):
             502,
             f"Resume parsing failed: {type(exc).__name__}: {str(exc)[:500]}",
         ) from exc
+
+
+@app.get("/common-answers", dependencies=auth)
+async def common_answers():
+    return [
+        {
+            "key": item.key,
+            "label": item.label,
+            "category": item.category,
+            "input_type": item.input_type,
+            "aliases": list(item.aliases),
+        }
+        for item in COMMON_QUESTIONS
+    ]
 
 
 @app.get("/profiles/{profile_id}", dependencies=auth)

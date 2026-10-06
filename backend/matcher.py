@@ -22,7 +22,7 @@ def _tokens(value: str) -> set[str]:
 def _profile_tokens(profile: Profile) -> set[str]:
     values = list(profile.skills)
     values.extend(item.title for item in profile.work_history)
-    values.extend(item.achievements for item in profile.work_history)
+    for item in profile.work_history:\n        values.extend(item.achievements)
     values.extend(item.field_of_study for item in profile.education)
     return _tokens(" ".join(values))
 

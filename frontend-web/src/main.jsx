@@ -443,7 +443,7 @@ function Intervention({run,cmd}){
                 answers:Object.fromEntries(batchQuestions.map(q=>[q.id,batch[q.id]??q.suggestion??""])),
                 remember:batchRemember
               })
-            }}
+            })}
           >
             Submit all answers & resume
           </Btn>

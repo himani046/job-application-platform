@@ -140,11 +140,13 @@ function Profile({d,profile,setProfile,load}){
         </div>
         <div className="intro-actions">
           <Badge tone="success">Protected workspace</Badge>
-          {profile&&!editing&&<Btn icon={Settings2} onClick={beginEdit}>Edit profile</Btn>}
+          {profile&&!editing&&<>
+            <Btn icon={Settings2} onClick={beginEdit}>Edit profile</Btn>
+            <Btn icon={X} onClick={deleteCurrent} loading={busy}>Delete profile</Btn>
+          </>}
           {profile&&editing&&<>
             <Btn onClick={()=>{setEditing(false);setDraft(null)}}>Cancel</Btn>
             <Btn primary loading={busy} icon={Check} onClick={save}>Save changes</Btn>
-            <Btn icon={X} onClick={deleteCurrent}>Delete profile</Btn>
           </>}
         </div>
       </div>

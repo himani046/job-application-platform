@@ -9,7 +9,7 @@ function Badge({children,tone="neutral"}){return <span className={"badge "+tone}
 function Btn({children,primary=false,icon:Icon,loading=false,...p}){return <button className={"btn "+(primary?"primary":"")} disabled={loading||p.disabled} {...p}>{loading?<LoaderCircle size={15} className="spin"/>:Icon&&<Icon size={15}/>} {children}</button>}
 function Stat({name,value,note,icon:Icon}){return <div className="stat"><div className="stat-head"><span>{name}</span><Icon size={16}/></div><strong>{value}</strong><small>{note}</small></div>}
 function Empty({title,text,icon:Icon=FolderKanban}){return <div className="empty"><div><Icon size={20}/></div><strong>{title}</strong><span>{text}</span></div>}
-function App(){const[page,setPage]=useState("overview"),[data,setData]=useState({metrics:null,apps:[],analytics:null,jobs:[],profiles:[]}),[profile,setProfile]=useState(null),[runId,setRunId]=useState(null),[run,setRun]=useState(null),[mobile,setMobile]=useState(false),[settings,setSettings]=useState(false),[error,setError]=useState(""),[loading,setLoading]=useState(true);
+function App(){const[page,setPage]=useState("overview"),[data,setData]=useState({metrics:null,apps:[],analytics:null,jobs:[],profiles:[]}),[profile,setProfile]=useState(null),[selectedJob,setSelectedJob]=useState(null),[runId,setRunId]=useState(null),[run,setRun]=useState(null),[mobile,setMobile]=useState(false),[settings,setSettings]=useState(false),[error,setError]=useState(""),[loading,setLoading]=useState(true);
 const load=async()=>{setLoading(true);try{const[m,a,n,j,p]=await Promise.all([api.metrics(),api.applications(),api.analytics(),api.jobs(),api.profiles()]);setData({metrics:m,apps:a,analytics:n,jobs:j,profiles:p});if(!profile&&p[0]){try{setProfile(await api.profile(p[0].id))}catch{setProfile(p[0])}}}catch(e){setError(e.message)}finally{setLoading(false)}};const selectProfile=async(p)=>{if(!p)return;setProfile(p);try{setProfile(await api.profile(p.id))}catch(e){setError("Could not load the full candidate profile: "+e.message)}};useEffect(()=>{if(TOKEN())load();else setLoading(false)},[]);
 useEffect(()=>{if(!runId)return;let refreshed=false;const f=async()=>{try{const next=await api.run(runId);setRun(next);if(!refreshed&&["completed","failed","stopped","expired"].includes(next.status)){refreshed=true;await load()}}catch{}};f();const t=setInterval(f,1800);return()=>clearInterval(t)},[runId]);
 
@@ -369,6 +369,155 @@ function Profile({d,profile,setProfile,load}){
 }
 function Automation({d,profile,setProfile,run,setRunId,selectedJob}){const[mode,setMode]=useState(selectedJob?"apply":"discover"),[portal,setPortal]=useState(selectedJob?.portal||"linkedin"),[url,setUrl]=useState(selectedJob?.url||""),[keywords,setKeywords]=useState(""),[location,setLocation]=useState("India"),[workplace,setWorkplace]=useState("any"),[priority,setPriority]=useState(100),[scheduled,setScheduled]=useState(""),[headless,setHeadless]=useState(false),[busy,setBusy]=useState(false);const active=run&&["queued","running","waiting"].includes(run.status);const waiting=run?.status==="waiting";useEffect(()=>{if(selectedJob){setMode("apply");setUrl(selectedJob.url||"");setPortal(selectedJob.portal||"linkedin")}},[selectedJob]);const start=async()=>{setBusy(true);try{const r=await api.create({mode,portal,profile_id:profile?.id||null,job_url:url||null,keywords,search_location:location,workplace_type:workplace,headless,priority:Number(priority),scheduled_at:(scheduled?new Date(scheduled).toISOString():null)});setRunId(r.id)}catch(e){alert(e.message)}finally{setBusy(false)}};const cmd=async(body)=>{try{await api.command(run.id,{...body,pause_token:run.pending?.token})}catch(e){alert(e.message)}};return <div className="page"><div className="intro"><div><small>BROWSER AUTOMATION</small><h2>Run the work. Keep the decision.</h2><p>Set the goal here. The browser handles repetitive steps and pauses whenever a human decision is required.</p></div>{active&&<Badge tone={waiting?"warning":"info"}>{waiting?"Waiting for you":"Browser running"}</Badge>}</div>{waiting?<Intervention run={run} cmd={cmd}/>:active?<Run run={run} stop={()=>cmd({action:"stop"})}/>:<div className="automation-grid"><section className="panel setup"><div className="steps"><i>1</i><b/><i className="current">2</i><b/><i>3</i></div><small>CONFIGURE AUTOMATION</small><h3>{selectedJob&&mode==="apply"?"Prepare selected job":"What should ApplyFlow do?"}</h3><div className="choices">{[["discover","Discover jobs",Search],["apply","Prepare an application",FileText],["login","Refresh login",ShieldCheck]].map(([id,text,I])=><button className={mode===id?"choice active":"choice"} key={id} onClick={()=>{setMode(id);if(id!=="apply")setUrl("")}}><I size={18}/><b>{text}</b><span>{id==="discover"?"Find and save relevant roles.":id==="apply"?"Open a specific role and prepare the form.":"Open a visible browser session."}</span></button>)}</div><div className="form2"><label>Portal<select value={portal} onChange={e=>setPortal(e.target.value)}><option value="linkedin">LinkedIn</option><option value="naukri">Naukri</option><option value="greenhouse">Greenhouse</option><option value="lever">Lever</option><option value="workday">Workday</option><option value="custom">Custom ATS</option></select></label><label>Candidate profile<select value={profile?.id||""} disabled={mode==="login"} onChange={async e=>{const p=d.profiles.find(x=>x.id===e.target.value);if(p)try{setProfile?.(await api.profile(p.id))}catch(err){alert(err.message)}}}><option value="">Select profile</option>{d.profiles.map(p=><option key={p.id} value={p.id}>{p.full_name||p.original_name}</option>)}</select></label></div>{mode==="apply"&&<><label>Job URL<input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://www.linkedin.com/jobs/view/…"/></label>{selectedJob&&<div className="selected-job"><b>{selectedJob.title}</b><span>{selectedJob.company||"Company"} · {selectedJob.location||"Location not specified"}</span></div>}</>}{mode==="discover"&&<><label>Search keywords<input value={keywords} onChange={e=>setKeywords(e.target.value)} placeholder="Machine Learning Engineer, Python, AI…"/></label><div className="form2"><label>Location<input value={location} onChange={e=>setLocation(e.target.value)}/></label><label>Workplace<select value={workplace} onChange={e=>setWorkplace(e.target.value)}><option value="any">Any</option><option value="remote">Remote</option><option value="hybrid">Hybrid</option><option value="onsite">On-site</option></select></label></div></>}{mode!=="login"&&<div className="form2"><label>Queue priority<input type="number" min="1" max="1000" value={priority} onChange={e=>setPriority(e.target.value)}/></label><label>Schedule for later<input type="datetime-local" value={scheduled} onChange={e=>setScheduled(e.target.value)} /></label></div>}{mode!=="discover"&&<label className="check-field"><input type="checkbox" checked={headless} onChange={e=>setHeadless(e.target.checked)} disabled={mode==="login"}/><span>Run headless</span></label>}<div className="safe"><ShieldCheck size={16}/><span>CAPTCHAs and authentication are never bypassed. Final submission remains a deliberate candidate action.</span></div><Btn primary loading={busy} icon={Play} disabled={(mode==="apply"&&!url)||(mode==="apply"&&!profile)} onClick={start}>{mode==="discover"?"Start discovery":mode==="apply"?"Prepare application":"Open login session"}</Btn></section><aside className="panel guide-panel"><small>HOW IT WORKS</small><h3>Automation with guardrails.</h3><Guide I={Search} t="Discover" d="Collect roles and normalize them into your job library."/><Guide I={Sparkles} t="Prepare" d="Use saved profile facts for known fields."/><Guide I={CircleHelp} t="Pause" d="Stop safely for verification or questions."/><Guide I={ShieldCheck} t="Submit" d="Uncertain submissions are never replayed automatically."/></aside></div>}</div>}function Settings({close}){const[b,setB]=useState(BASE()),[t,setT]=useState(TOKEN());return <div className="modal-bg"><div className="modal"><div className="modal-head"><div><small>WORKSPACE</small><h3>Connection settings</h3></div><button className="icon" onClick={close}><X size={17}/></button></div><label>Backend URL<input value={b} onChange={e=>setB(e.target.value)}/></label><label>API token<input type="password" value={t} onChange={e=>setT(e.target.value)}/></label><div className="modal-actions"><Btn onClick={close}>Cancel</Btn><Btn primary onClick={()=>{localStorage.setItem("jobflow_api_base",b.replace(/\/$/,""));sessionStorage.setItem("jobflow_api_token",t);close();window.location.reload()}}>Save connection</Btn></div></div></div>}
 function Skeleton(){return <div className="skeleton"><div/><div className="skrow">{[1,2,3,4].map(i=><i key={i}/>)}</div><section/></div>}
-export default App;
 
-createRoot(document.getElementById("root")).render(<App />);function Intervention({run,cmd}){const p=run.pending||{},[answer,setAnswer]=useState(p.suggestion||""),[remember,setRemember]=useState(false),[batch,setBatch]=useState({}),[batchRemember,setBatchRemember]=useState({});const browserOnly=["login","challenge","navigation","upload","widget"].includes(p.reason);const options=p.options||[];const submit=()=>cmd({action:"answer",answer,remember});const batchQuestions=p.batch_questions||[];const setBatchValue=(id,v)=>setBatch(x=>({...x,[id]:v}));return <section className="intervention"><div className="intervention-head"><div className="warn-icon"><CircleHelp size={20}/></div><div><small>YOUR ATTENTION IS NEEDED</small><h3>{p.question||p.message||"Review the next application step"}</h3><p>The browser is paused. Nothing continues until you explicitly respond.</p></div><Badge tone="warning">Paused</Badge></div>{p.url&&<a className="pending-url" href={p.url} target="_blank" rel="noreferrer">Open current browser page <ArrowUpRight size={13}/></a>}{p.errors?.map((x,i)=><div className="pending-error" key={i}>{x}</div>)}{browserOnly?<div className="browser-action"><ShieldCheck size={16}/><div><b>Browser action required</b><span>Keep the browser visible, complete the requested action, then return here and resume.</span></div></div>:<div className="live-banner">Answer the application question below. Your browser will remain paused until you submit.</div>}{p.category&&<div className="chips"><span>{p.category}</span><span>{p.required?"Required":"Optional"}</span>{p.current_value&&<span>Current: {p.current_value}</span></div>}{p.explanation&&<div className="pending-explanation">{p.explanation}</div>}{batchQuestions.length&&p.allowed?.includes("answer")?<div className="batch-review"><h4>{batchQuestions.length} questions are ready</h4><p>Review every proposed answer. Required questions must be completed before the browser can continue.</p>{batchQuestions.map((q,i)=><div className="batch-question" key={q.id||i}><b>{q.question}</b>{q.options?.length?<div className="options">{q.options.map(o=><button className={batch[q.id]===o?"selected":""} key={o} onClick={()=>setBatchValue(q.id,o)}>{batch[q.id]===o&&<Check size={13}/>} {o}</button>)}</div>:<textarea value={batch[q.id]??q.suggestion??""} onChange={e=>setBatchValue(q.id,e.target.value)} rows="3" placeholder="Enter answer…"/>}<label className="remember"><input type="checkbox" checked={!!batchRemember[q.id]} onChange={e=>setBatchRemember(x=>({...x,[q.id]:e.target.checked}))}/>Remember this answer for this resume profile</label></div>)}<Btn primary icon={Check} disabled={batchQuestions.some(q=>q.required&&!String(batch[q.id]??q.suggestion??"").trim())} onClick={()=>cmd({action:"answer",answer:JSON.stringify({answers:Object.fromEntries(batchQuestions.map(q=>[q.id,batch[q.id]??q.suggestion??""])),remember:batchRemember})})}>Submit all answers & resume</Btn></div>:!browserOnly&&p.allowed?.includes("answer")?<>{options.length?<div className="options">{options.map(o=><button className={answer===o?"selected":""} key={o} onClick={()=>setAnswer(o)}>{answer===o&&<Check size={14}/>} {o}</button>)}</div>:<textarea value={answer} onChange={e=>setAnswer(e.target.value)} placeholder="Type your answer…" rows="4"/>}<label className="remember"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>Remember this answer for this resume profile</label></>:null}<div className="intervention-actions">{p.allowed?.includes("skip")&&<Btn onClick={()=>cmd({action:"skip"})}>Skip optional field</Btn>}{p.allowed?.includes("resume")&&<Btn onClick={()=>cmd({action:"resume"})}>Resume / re-check</Btn>}{p.allowed?.includes("approve")&&<Btn primary icon={ShieldCheck} onClick={()=>{if(window.confirm("I reviewed this action and authorize it, including submission if applicable."))cmd({action:"approve"})}}>Approve browser click</Btn>}{p.allowed?.includes("mark_submitted")&&<Btn icon={Check} onClick={()=>{if(window.confirm("I personally verified a successful submission or receipt."))cmd({action:"mark_submitted"})}}>Mark submitted</Btn>}{p.allowed?.includes("answer")&&!browserOnly&&!batchQuestions.length&&<Btn primary icon={Check} disabled={!answer.trim()} onClick={submit}>Submit & resume</Btn>}</div></section>}function Run({run,stop}){const results=run.results||[];return <section className="panel run"><div className="run-head"><div><small>AUTOMATION SESSION</small><h3>{run.request?.mode==="discover"?"Discovering roles":run.request?.mode==="apply"?"Preparing application":"Portal session"}</h3><span>Run {run.id.slice(0,12)} · {run.request?.portal} · {run.status}</span></div>{["queued","running","waiting"].includes(run.status)&&<Btn icon={Square} onClick={stop}>Stop run</Btn>}</div><div className="progress"/><div className="runsteps"><span>Start browser</span><span>Work through portal</span><span>Human review</span><span>Complete</span></div>{run.request?.mode==="discover"&&<div className="run-discovery"><div className="section-row"><div><small>DISCOVERY RESULTS</small><h4>{results.length} roles found</h4></div>{run.status==="completed"&&<Badge tone="success">Saved to job library</Badge>}</div>{results.slice(0,20).map((j,i)=><div className="discovery-row" key={j.url||i}><div><b>{j.title||"Untitled role"}</b><span>{j.company||"Company not specified"}{j.location?" · "+j.location:""}</span></div><a href={j.url} target="_blank" rel="noreferrer">Open <ArrowUpRight size={12}/></a></div>)}{!results.length&&<p className="muted">Jobs will appear here as the browser discovers them.</p>}</div>}<div className="logs">{(run.logs||[]).slice(-10).map((x,i)=><div key={i}><b>{x.level||"info"}</b>{x.message}</div>)}</div></section>}function Intervention({run,cmd}){const p=run.pending||{},[answer,setAnswer]=useState(p.suggestion||""),[remember,setRemember]=useState(false),[batch,setBatch]=useState({});const browserOnly=["login","challenge","navigation","upload","widget"].includes(p.reason);const options=p.options||[];const submit=()=>cmd({action:"answer",answer,remember});const batchQuestions=p.batch_questions||[];const setBatchValue=(id,v)=>setBatch(x=>({...x,[id]:v}));return <section className="intervention"><div className="intervention-head"><div className="warn-icon"><CircleHelp size={20}/></div><div><small>YOUR ATTENTION IS NEEDED</small><h3>{p.question||p.message||"Review the next application step"}</h3><p>The browser is paused. Nothing continues until you explicitly respond.</p></div><Badge tone="warning">Paused</Badge></div>{p.url&&<a className="pending-url" href={p.url} target="_blank" rel="noreferrer">Open current browser page <ArrowUpRight size={13}/></a>}{p.errors?.map((x,i)=><div className="pending-error" key={i}>{x}</div>)}{browserOnly?<div className="browser-action"><ShieldCheck size={16}/><div><b>Browser action required</b><span>Keep the browser visible, complete the requested action, then return here and resume.</span></div></div>:<div className="live-banner">Answer the application question below. Your browser will remain paused until you submit.</div>}{p.category&&<div className="chips"><span>{p.category}</span><span>{p.required?"Required":"Optional"}</span>{p.current_value&&<span>Current: {p.current_value}</span></div>}{p.explanation&&<div className="pending-explanation">{p.explanation}</div>}{batchQuestions.length&&p.allowed?.includes("answer")?<div className="batch-review"><h4>{batchQuestions.length} questions are ready</h4><p>Review every proposed answer. Required questions must be completed before the browser can continue.</p>{batchQuestions.map((q,i)=><div className="batch-question" key={q.id||i}><b>{q.question}</b>{q.options?.length?<div className="options">{q.options.map(o=><button className={batch[q.id]===o?"selected":""} key={o} onClick={()=>setBatchValue(q.id,o)}>{batch[q.id]===o&&<Check size={13}/>} {o}</button>)}</div>:<textarea value={batch[q.id]??q.suggestion??""} onChange={e=>setBatchValue(q.id,e.target.value)} rows="3" placeholder="Enter answer…"/>}</div>)}<Btn primary icon={Check} disabled={batchQuestions.some(q=>q.required&&!String(batch[q.id]??q.suggestion??"").trim())} onClick={()=>cmd({action:"answer",answer:JSON.stringify({answers:Object.fromEntries(batchQuestions.map(q=>[q.id,batch[q.id]??q.suggestion??""])),remember:Object.fromEntries(batchQuestions.map(q=>[q.id,false]))})})}>Submit all answers & resume</Btn></div>:!browserOnly&&p.allowed?.includes("answer")?<>{options.length?<div className="options">{options.map(o=><button className={answer===o?"selected":""} key={o} onClick={()=>setAnswer(o)}>{answer===o&&<Check size={14}/>} {o}</button>)}</div>:<textarea value={answer} onChange={e=>setAnswer(e.target.value)} placeholder="Type your answer…" rows="4"/>}<label className="remember"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>Remember this answer for this resume profile</label></>:null}<div className="intervention-actions">{p.allowed?.includes("skip")&&<Btn onClick={()=>cmd({action:"skip"})}>Skip optional field</Btn>}{p.allowed?.includes("resume")&&<Btn onClick={()=>cmd({action:"resume"})}>Resume / re-check</Btn>}{p.allowed?.includes("approve")&&<Btn primary icon={ShieldCheck} onClick={()=>{if(window.confirm("I reviewed this action and authorize it, including submission if applicable."))cmd({action:"approve"})}}>Approve browser click</Btn>}{p.allowed?.includes("mark_submitted")&&<Btn icon={Check} onClick={()=>{if(window.confirm("I personally verified a successful submission or receipt."))cmd({action:"mark_submitted"})}}>Mark submitted</Btn>}{p.allowed?.includes("answer")&&!browserOnly&&!batchQuestions.length&&<Btn primary icon={Check} disabled={!answer.trim()} onClick={submit}>Submit & resume</Btn>}</div></section>}
+function Intervention({run,cmd}){
+  const p=run.pending||{};
+  const [answer,setAnswer]=useState(p.suggestion||"");
+  const [remember,setRemember]=useState(false);
+  const [batch,setBatch]=useState({});
+  const [batchRemember,setBatchRemember]=useState({});
+  const browserOnly=["login","challenge","navigation","upload","widget"].includes(p.reason);
+  const options=p.options||[];
+  const submit=()=>cmd({action:"answer",answer,remember});
+  const batchQuestions=p.batch_questions||[];
+  const setBatchValue=(id,v)=>setBatch(x=>({...x,[id]:v}));
+
+  return (
+    <section className="intervention">
+      <div className="intervention-head">
+        <div className="warn-icon"><CircleHelp size={20}/></div>
+        <div>
+          <small>YOUR ATTENTION IS NEEDED</small>
+          <h3>{p.question||p.message||"Review the next application step"}</h3>
+          <p>The browser is paused. Nothing continues until you explicitly respond.</p>
+        </div>
+        <Badge tone="warning">Paused</Badge>
+      </div>
+
+      {p.url&&<a className="pending-url" href={p.url} target="_blank" rel="noreferrer">Open current browser page <ArrowUpRight size={13}/></a>}
+      {p.errors?.map((x,i)=><div className="pending-error" key={i}>{x}</div>)}
+
+      {browserOnly ? (
+        <div className="browser-action">
+          <ShieldCheck size={16}/>
+          <div><b>Browser action required</b><span>Keep the browser visible, complete the requested action, then return here and resume.</span></div>
+        </div>
+      ) : (
+        <div className="live-banner">Answer the application question below. Your browser will remain paused until you submit.</div>
+      )}
+
+      {p.category&&<div className="chips"><span>{p.category}</span><span>{p.required?"Required":"Optional"}</span>{p.current_value&&<span>Current: {p.current_value}</span>}</div>}
+      {p.explanation&&<div className="pending-explanation">{p.explanation}</div>}
+
+      {batchQuestions.length&&p.allowed?.includes("answer") ? (
+        <div className="batch-review">
+          <h4>{batchQuestions.length} questions are ready</h4>
+          <p>Review every proposed answer. Required questions must be completed before the browser can continue.</p>
+          {batchQuestions.map((q,i)=>(
+            <div className="batch-question" key={q.id||i}>
+              <b>{q.question}</b>
+              {q.options?.length ? (
+                <div className="options">
+                  {q.options.map(o=>(
+                    <button className={batch[q.id]===o?"selected":""} key={o} onClick={()=>setBatchValue(q.id,o)}>
+                      {batch[q.id]===o&&<Check size={13}/>} {o}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <textarea value={batch[q.id]??q.suggestion??""} onChange={e=>setBatchValue(q.id,e.target.value)} rows="3" placeholder="Enter answer…"/>
+              )}
+              <label className="remember">
+                <input type="checkbox" checked={!!batchRemember[q.id]} onChange={e=>setBatchRemember(x=>({...x,[q.id]:e.target.checked}))}/>
+                Remember this answer for this resume profile
+              </label>
+            </div>
+          ))}
+          <Btn
+            primary
+            icon={Check}
+            disabled={batchQuestions.some(q=>q.required&&!String(batch[q.id]??q.suggestion??"").trim())}
+            onClick={()=>cmd({
+              action:"answer",
+              answer:JSON.stringify({
+                answers:Object.fromEntries(batchQuestions.map(q=>[q.id,batch[q.id]??q.suggestion??""])),
+                remember:batchRemember
+              })
+            }}
+          >
+            Submit all answers & resume
+          </Btn>
+        </div>
+      ) : (
+        !browserOnly&&p.allowed?.includes("answer") ? (
+          <>
+            {options.length ? (
+              <div className="options">
+                {options.map(o=>(
+                  <button className={answer===o?"selected":""} key={o} onClick={()=>setAnswer(o)}>
+                    {answer===o&&<Check size={14}/>} {o}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <textarea value={answer} onChange={e=>setAnswer(e.target.value)} placeholder="Type your answer…" rows="4"/>
+            )}
+            <label className="remember">
+              <input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>
+              Remember this answer for this resume profile
+            </label>
+          </>
+        ) : null
+      )}
+
+      <div className="intervention-actions">
+        {p.allowed?.includes("skip")&&<Btn onClick={()=>cmd({action:"skip"})}>Skip optional field</Btn>}
+        {p.allowed?.includes("resume")&&<Btn onClick={()=>cmd({action:"resume"})}>Resume / re-check</Btn>}
+        {p.allowed?.includes("approve")&&<Btn primary icon={ShieldCheck} onClick={()=>{if(window.confirm("I reviewed this action and authorize it, including submission if applicable."))cmd({action:"approve"})}}>Approve browser click</Btn>}
+        {p.allowed?.includes("mark_submitted")&&<Btn icon={Check} onClick={()=>{if(window.confirm("I personally verified a successful submission or receipt."))cmd({action:"mark_submitted"})}}>Mark submitted</Btn>}
+        {p.allowed?.includes("answer")&&!browserOnly&&!batchQuestions.length&&<Btn primary icon={Check} disabled={!answer.trim()} onClick={submit}>Submit & resume</Btn>}
+      </div>
+    </section>
+  );
+}
+
+function Run({run,stop}){
+  const results=run.results||[];
+  return (
+    <section className="panel run">
+      <div className="run-head">
+        <div>
+          <small>AUTOMATION SESSION</small>
+          <h3>{run.request?.mode==="discover"?"Discovering roles":run.request?.mode==="apply"?"Preparing application":"Portal session"}</h3>
+          <span>Run {run.id.slice(0,12)} · {run.request?.portal} · {run.status}</span>
+        </div>
+        {["queued","running","waiting"].includes(run.status)&&<Btn icon={Square} onClick={stop}>Stop run</Btn>}
+      </div>
+      <div className="progress"/>
+      <div className="runsteps"><span>Start browser</span><span>Work through portal</span><span>Human review</span><span>Complete</span></div>
+
+      {run.request?.mode==="discover"&&(
+        <div className="run-discovery">
+          <div className="section-row">
+            <div><small>DISCOVERY RESULTS</small><h4>{results.length} roles found</h4></div>
+            {run.status==="completed"&&<Badge tone="success">Saved to job library</Badge>}
+          </div>
+          {results.slice(0,20).map((j,i)=>(
+            <div className="discovery-row" key={j.url||i}>
+              <div><b>{j.title||"Untitled role"}</b><span>{j.company||"Company not specified"}{j.location?" · "+j.location:""}</span></div>
+              <a href={j.url} target="_blank" rel="noreferrer">Open <ArrowUpRight size={12}/></a>
+            </div>
+          ))}
+          {!results.length&&<p className="muted">Jobs will appear here as the browser discovers them.</p>}
+        </div>
+      )}
+
+      <div className="logs">
+        {(run.logs||[]).slice(-10).map((x,i)=><div key={i}><b>{x.level||"info"}</b>{x.message}</div>)}
+      </div>
+    </section>
+  );
+}
+
+export default App;
+createRoot(document.getElementById("root")).render(<App />);
